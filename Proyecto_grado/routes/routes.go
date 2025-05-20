@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 	"path/filepath"
+	"proyecto_grado/builder"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,13 +32,16 @@ func generarPayloadHandler(c *gin.Context) {
 		extension = ".exe"
 	}
 
-	output := filepath.Join("bin", "payload_"+req.Mode+extension)
+	output := filepath.Join("../bin", "payload_"+req.Mode+extension)
 
-	// err := builder.BuildPayload(output, req.Host, req.Port, req.Mode, req.OS, req.Arch)
-	// if err != nil {
-	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al compilar", "detalle": err.Error()})
-	// 	return
-	// }
+	err := builder.BuildPayload(output, req.OS, req.Arch, req.Host, req.Port, req.Mode, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Error generando payload",
+			"detalle": err.Error(),
+		})
+		return
+	}
 
 	c.Header("Content-Disposition", "attachment; filename="+filepath.Base(output))
 	c.Header("Content-Type", "application/octet-stream")

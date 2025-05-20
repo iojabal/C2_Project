@@ -56,7 +56,7 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 	// Validar el binario
 	info, err := os.Stat(outputPath)
 	if err != nil {
-		return fmt.Errorf("Binario no encontrado: %v", err)
+		return fmt.Errorf(" Binario no encontrado: %v", err)
 	}
 	if info.Size() < 500_000 {
 		return fmt.Errorf(" Binario muy pequeño (%d bytes)", info.Size())
