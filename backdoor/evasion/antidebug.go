@@ -14,7 +14,7 @@ func StartAntiDebugLoop() {
 			fmt.Println("[DEBUG] Ejecutando chequeo de anti-debug...")
 
 			if IsDebuggerPresent() {
-				fmt.Println("[🛑] Debugger detectado en runtime (IsDebuggerPresent)")
+				fmt.Println("Debugger detectado en runtime (IsDebuggerPresent)")
 				os.Exit(1)
 			}
 
@@ -22,7 +22,7 @@ func StartAntiDebugLoop() {
 			sleepProc := kernel.NewProc("Sleep")
 
 			if HasBreakpoint(sleepProc.Addr()) {
-				fmt.Println("[🛑] Breakpoint detectado en runtime (Sleep)")
+				fmt.Println("Breakpoint detectado en runtime (Sleep)")
 				os.Exit(1)
 			}
 
@@ -59,7 +59,7 @@ func HasBreakpoint(addr uintptr) bool {
 
 func AntiDebugChecks() {
 	if IsDebuggerPresent() {
-		fmt.Println("[🛑] Debugger detectado con IsDebuggerPresent")
+		fmt.Println("Debugger detectado con IsDebuggerPresent")
 		os.Exit(1)
 	}
 
@@ -68,7 +68,7 @@ func AntiDebugChecks() {
 	sleepProc := kernel.NewProc("Sleep")
 
 	if HasBreakpoint(sleepProc.Addr()) {
-		fmt.Println("[🛑] Breakpoint detectado en kernel32.Sleep")
+		fmt.Println("Breakpoint detectado en kernel32.Sleep")
 		os.Exit(1)
 	}
 }
