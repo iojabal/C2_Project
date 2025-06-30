@@ -5,6 +5,7 @@ go 1.23.2
 require github.com/kbinani/screenshot v0.0.0-20250118074034-a3924b7bbc8c
 
 require (
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/gen2brain/shm v0.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect

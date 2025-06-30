@@ -1,8 +1,8 @@
 package config
 
 const (
-	Host = "192.168.148.132"
-	Port = "8080"
+	Host = "192.168.148.136"
+	Port = "443"
 	Mode = "tcp"
-	EnablePersistence = true
+	EnablePersistence = false
 )
