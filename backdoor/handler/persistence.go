@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-func PersistenceHandler(t transport.Transport) {
+func PersistenceHandler(t transport.Transport, args []string) {
 	if !config.EnablePersistence {
 		t.Write([]byte("Persistencia deshabilitada por configuración"))
 		return
