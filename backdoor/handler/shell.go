@@ -10,7 +10,7 @@ import (
 	"runtime"
 )
 
-func ShellHandler(t transport.Transport) {
+func ShellHandler(t transport.Transport, args []string) {
 	username := os.Getenv("USERNAME")
 	if username == "" {
 		username = os.Getenv("USER")
