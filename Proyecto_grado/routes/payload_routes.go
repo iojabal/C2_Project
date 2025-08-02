@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 	"path/filepath"
+	"proyecto_grado/controllers"
 	"proyecto_grado/models"
 	"proyecto_grado/services"
 
@@ -12,7 +13,15 @@ import (
 func RegisterRoutes(r *gin.Engine) {
 	r.POST("/generar", generarPayloadHandler)
 }
+func RegisterScreenshotRoutes(r *gin.Engine) {
+	r.POST("/screenshot", controllers.ScreenshotHandler)
 
+	r.Static("/tmp", "./tmp")
+}
+
+func RegisterPingRoutes(r *gin.Engine) {
+	r.POST("/ping", controllers.PingHandler)
+}
 func generarPayloadHandler(c *gin.Context) {
 	var req models.PayloadRequest
 	if err := c.BindJSON(&req); err != nil {

