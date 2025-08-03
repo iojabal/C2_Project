@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAgents } from "../context/AgentContext";
 import { 
   Monitor, 
   Terminal, 
@@ -13,8 +15,12 @@ import {
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [activeItem, setActiveItem] = useState("Agentes");
-  // Simulando agentes para el ejemplo
-  const activeCount = 3;
+  const navigate = useNavigate();
+  
+  // Obtenemos los agentes en tiempo real del WebSocket
+  const agents = useAgents();
+  const activeCount = agents.filter(a => a.Connected && a.Active).length;
+  const connectedCount = agents.filter(a => a.Connected).length;
 
   const toggleSidebar = () => setCollapsed(!collapsed);
 
@@ -32,18 +38,23 @@ const Sidebar = () => {
       description: "Terminal interactiva"
     },
     {
-      label: "Historial",
-      to: "/historial",
-      icon: <FileText size={20} />,
-      description: "Registro de actividad"
-    },
-    {
       label: "Generar",
       to: "/generar",
       icon: <Settings size={20} />,
       description: "Herramientas de generación"
     },
+    {
+      label: "Reportes",
+      to: "/Reportes",
+      icon: <FileText size={20} />,
+      description: "Reportes y análisis"
+    },
   ];
+
+  const handleNavigation = (label, to) => {
+    setActiveItem(label);
+    navigate(to);
+  };
 
   return (
     <aside
@@ -86,12 +97,32 @@ const Sidebar = () => {
             <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/30">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  <span className="text-xs font-medium text-gray-400">Sistema Activo</span>
+                  <div className={`w-2 h-2 rounded-full ${
+                    activeCount > 0 
+                      ? "bg-emerald-500 animate-pulse" 
+                      : connectedCount > 0 
+                      ? "bg-blue-500 animate-pulse"
+                      : "bg-gray-500"
+                  }`}></div>
+                  <span className="text-xs font-medium text-gray-400">
+                    {activeCount > 0 
+                      ? "Sistema Activo" 
+                      : connectedCount > 0 
+                      ? "Sistema Conectado"
+                      : "Sistema Offline"
+                    }
+                  </span>
                 </div>
-                <span className="text-xs text-emerald-400 font-semibold">
-                  {activeCount} conectados
-                </span>
+                <div className="flex items-center gap-2">
+                  {activeCount > 0 && (
+                    <span className="text-xs text-emerald-400 font-semibold">
+                      {activeCount} activos
+                    </span>
+                  )}
+                  <span className="text-xs text-blue-400 font-semibold">
+                    {connectedCount} conectados
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -103,7 +134,7 @@ const Sidebar = () => {
             {navItems.map(({ label, to, icon, description }) => (
               <button
                 key={to}
-                onClick={() => setActiveItem(label)}
+                onClick={() => handleNavigation(label, to)}
                 className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative overflow-hidden w-full text-left ${
                   activeItem === label
                     ? "bg-gradient-to-r from-emerald-500/20 to-blue-500/20 text-white border border-emerald-500/30 shadow-lg shadow-emerald-500/10"

@@ -14,13 +14,14 @@ func main() {
 		log.Fatalf("Error conectando a MongoDB: %v", err)
 	}
 	defer db.Close()
+
 	r := gin.Default()
 	r.Use(cors.Default())
 	routes.RegisterRoutes(r)
 	routes.RegisterWsRoutes(r)
 	routes.RegisterScreenshotRoutes(r)
 	routes.RegisterPingRoutes(r)
-	routes.RegisterAuditRoutes(r)
+	routes.SetupAuditRoutes(r)
 
 	r.Run(":5000") // Servidor en localhost:8080
 

@@ -3,26 +3,36 @@ package models
 import (
 	"context"
 	"proyecto_grado/db"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type AuditReport struct {
-	AgentID       string        `json:"agent_id"`
-	Hostname      string        `json:"hostname"`
-	OS            string        `json:"os"`
-	Arch          string        `json:"arch"`
-	User          string        `json:"user"`
-	Elevated      bool          `json:"elevated"`
-	FirstSeen     string        `json:"first_seen"`
-	LastSeen      string        `json:"last_seen"`
-	IPs           []string      `json:"ips"`
-	Gateway       string        `json:"gateway"`
-	DNS           []string      `json:"dns"`
-	Persistence   []string      `json:"persistence"`
-	AntiDebug     bool          `json:"anti_debug"`
-	Processes     []ProcessInfo `json:"processes"`
-	Connections   []ConnInfo    `json:"connections"`
-	CommandsRun   []string      `json:"commands_executed"`
-	FilesAccessed []FileInfo    `json:"files_exfiltrated"`
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
+	AgentID       string             `bson:"agentid" json:"agent_id"`
+	Hostname      string             `bson:"hostname" json:"hostname"`
+	OS            string             `bson:"os" json:"os"`
+	Arch          string             `bson:"arch" json:"arch"`
+	User          string             `bson:"user" json:"user"`
+	Elevated      bool               `bson:"elevated" json:"elevated"`
+	FirstSeen     string             `bson:"firstseen" json:"firstseen"`
+	LastSeen      string             `bson:"lastseen" json:"last_seen"`
+	IPs           []string           `bson:"ips" json:"ips"`
+	Gateway       string             `bson:"gateway" json:"gateway"`
+	DNS           []string           `bson:"dns" json:"dns"`
+	Persistence   []interface{}      `bson:"persistence" json:"persistence"`
+	AntiDebug     bool               `bson:"antidebug" json:"antidebug"`
+	Processes     []ProcessInfo      `bson:"processes" json:"processes"`
+	Connections   []ConnInfo         `bson:"connections" json:"connections"`
+	CommandsRun   []string           `bson:"commandsrun" json:"commands_executed"`
+	FilesAccessed []FileInfo         `bson:"filesaccessed" json:"files_exfiltrated"`
+}
+
+type AgentWithReports struct {
+	Agent       `bson:",inline"`
+	Reports     []AuditReport `bson:"reports" json:"reports"`
+	ReportCount int           `bson:"reportCount" json:"reportCount"`
+	LastReport  string        `bson:"lastReport,omitempty" json:"lastReport,omitempty"`
 }
 
 type ProcessInfo struct {

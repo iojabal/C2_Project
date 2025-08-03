@@ -3,9 +3,10 @@ import { AgentsProvider } from "./context/AgentContext";
 import Layout from "./components/Layout";
 import Agentes from "./pages/Agentes";
 import Consola from "./pages/Consola";
-const Historial = () => <h1>Historial</h1>;
-const Generar   = () => <h1>Generar</h1>;
-
+import Generar from "./pages/Generar";
+import Reportes from "./pages/Reportes";
+import ReportDetail from "./pages/ReportDetails"; // Asegúrate de tener este componente
+// const Historial = () => <h1>Historial</h1>;
 function App() {
   return (
     <Router>
@@ -16,8 +17,9 @@ function App() {
             <Route index element={<Agentes />} />
             <Route path="agentes" element={<Agentes />} />
             <Route path="consola"  element={<Consola />} />
-            <Route path="historial" element={<Historial />} />
             <Route path="generar"   element={<Generar />} />
+            <Route path="reportes" element={<Reportes />} />
+            <Route path="/report/:id" element={<ReportDetail />} />
           </Route>
         </Routes>
       </AgentsProvider>

@@ -19,9 +19,6 @@ func RegisterScreenshotRoutes(r *gin.Engine) {
 	r.Static("/tmp", "./tmp")
 }
 
-func RegisterAuditRoutes(r *gin.Engine) {
-	r.POST("/audit", controllers.AuditHandler)
-}
 func RegisterPingRoutes(r *gin.Engine) {
 	r.POST("/ping", controllers.PingHandler)
 }
