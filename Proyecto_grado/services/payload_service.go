@@ -25,6 +25,7 @@ func GeneratePayload(req *models.PayloadRequest) (string, error) {
 		req.Port,
 		req.Mode,
 		req.EnablePersistence,
+		req.Debug,
 	)
 	if err != nil {
 		return "", fmt.Errorf("error al generar el payload: %v", err)

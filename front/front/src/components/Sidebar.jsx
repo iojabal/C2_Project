@@ -10,25 +10,39 @@ import {
 import { NavLink } from "react-router-dom";
 import { useState } from "react";
 
+// Importa el hook que provee la lista de agentes
+import { useAgents } from "../context/AgentContext";
+
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const agents = useAgents();                          
+  const activeCount = agents.filter(a => a.connected && a.active).length;
 
   const toggleSidebar = () => setCollapsed(!collapsed);
 
+  // Aquí ya no necesitas un badge estático
   const navItems = [
     {
       label: "Agentes",
       to: "/agentes",
       icon: <HiOutlineDesktopComputer size={20} />,
-      badge: 2,
+      // Píntalo dinámico más abajo
     },
-    { label: "Consola", to: "/consola", icon: <HiOutlineTerminal size={20} /> },
+    {
+      label: "Consola",
+      to: "/consola",
+      icon: <HiOutlineTerminal size={20} />,
+    },
     {
       label: "Historial",
       to: "/historial",
       icon: <HiOutlineDocumentText size={20} />,
     },
-    { label: "Generar", to: "/generar", icon: <HiOutlineCog size={20} /> },
+    {
+      label: "Generar",
+      to: "/generar",
+      icon: <HiOutlineCog size={20} />,
+    },
   ];
 
   return (
@@ -49,7 +63,7 @@ const Sidebar = () => {
 
         {/* Navegación */}
         <nav className="flex flex-col gap-1 mt-4">
-          {navItems.map(({ label, to, icon, badge }) => (
+          {navItems.map(({ label, to, icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -63,10 +77,11 @@ const Sidebar = () => {
             >
               {icon}
               {!collapsed && <span className="text-sm">{label}</span>}
-              {/* Badge */}
-              {badge && !collapsed && (
+
+              {/* Sólo para “Agentes” mostramos el badge dinámico */}
+              {!collapsed && label === "Agentes" && (
                 <span className="ml-auto text-xs bg-[#3A3B3F] text-white px-2 py-0.5 rounded-full">
-                  {badge}
+                  {activeCount}
                 </span>
               )}
             </NavLink>

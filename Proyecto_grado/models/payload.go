@@ -7,4 +7,5 @@ type PayloadRequest struct {
 	OS                string `json:"os"`
 	Arch              string `json:"arch"`
 	EnablePersistence bool   `json:"enable_persistence"`
+	Debug             bool   `json:"debug"`
 }

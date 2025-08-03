@@ -11,7 +11,7 @@ import (
 func StartAntiDebugLoop() {
 	go func() {
 		for {
-			fmt.Println("[DEBUG] Ejecutando chequeo de anti-debug...")
+			// fmt.Println("[DEBUG] Ejecutando chequeo de anti-debug...")
 
 			if IsDebuggerPresent() {
 				fmt.Println("Debugger detectado en runtime (IsDebuggerPresent)")

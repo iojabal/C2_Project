@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var ConsoleClients = make(map[*websocket.Conn]bool)
+// var ConsoleClients = make(map[*websocket.Conn]bool)
 var ActiveAgentUUID string // <- UUID del agente actualmente seleccionado
 
 var consoleUpgrader = websocket.Upgrader{

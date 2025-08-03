@@ -1,89 +1,98 @@
 import React, { useEffect, useRef } from "react";
 import { Terminal } from "xterm";
-import "xterm/css/xterm.css";
+import { FitAddon } from "xterm-addon-fit";
 
-const TerminalConsole = () => {
+export default function TerminalConsole({ agentId }) {
   const terminalRef = useRef(null);
   const term = useRef(null);
+  const fitAddon = useRef(null);
   const socket = useRef(null);
   const inputBuffer = useRef("");
 
   useEffect(() => {
+    // Inicializa terminal
     term.current = new Terminal({
       fontSize: 14,
-      theme: { background: "#1e1e1e", foreground: "#ffffff" },
-      rows: 25,
-      cols: 80,
+      theme: { background: "#000000", foreground: "#38a169" }, // text-green-400 on black
       cursorBlink: true,
+      convertEol: true, // Convierte \n a \r\n automáticamente
     });
 
-    socket.current = new WebSocket("ws://localhost:5000/ws/console");
+    fitAddon.current = new FitAddon();
+    term.current.loadAddon(fitAddon.current);
 
     term.current.open(terminalRef.current);
-    term.current.focus();
+    fitAddon.current.fit();
 
+    window.addEventListener("resize", fitAddon.current.fit);
+
+    // Conexión WebSocket
+    socket.current = new WebSocket("ws://localhost:5000/ws/console");
     socket.current.onopen = () => {
-      term.current.writeln("[*] WebSocket conectado.");
-      term.current.writeln("Consola conectada. Escribe tu comando...");
       printPrompt();
     };
-
-    socket.current.onmessage = (event) => {
-      term.current.writeln(event.data);
+    socket.current.onmessage = (evt) => {
+      // Procesar la respuesta para manejar saltos de línea correctamente
+      let response = evt.data.toString();
+      
+      // Escribir la respuesta con saltos de línea explícitos
+      term.current.write('\r\n' + response.replace(/\n/g, '\r\n'));
+      if (!response.endsWith('\n')) {
+        term.current.write('\r\n');
+      }
+      
       printPrompt();
     };
-
-    socket.current.onerror = (err) => {
-      term.current.writeln(`\r\n[!] WebSocket error: ${JSON.stringify(err)}`);
-    };
+    socket.current.onerror = (err) => console.error(err);
 
     term.current.onKey(({ key, domEvent }) => {
       const code = domEvent.code;
-
-      if (domEvent.ctrlKey || domEvent.altKey || domEvent.metaKey) {
-        return; // Ignorar combinaciones especiales
-      }
-
+      if (domEvent.ctrlKey || domEvent.altKey || domEvent.metaKey) return;
       switch (code) {
         case "Enter":
           term.current.write("\r\n");
-          if (inputBuffer.current.trim() !== "") {
+          if (inputBuffer.current.trim()) {
             socket.current.send(inputBuffer.current + "\n");
+          } else {
+            // Si no hay comando, mostrar prompt inmediatamente
+            printPrompt();
           }
           inputBuffer.current = "";
           break;
-
         case "Backspace":
-          if (inputBuffer.current.length > 0) {
+          if (inputBuffer.current.length) {
             inputBuffer.current = inputBuffer.current.slice(0, -1);
             term.current.write("\b \b");
           }
           break;
-
         default:
           inputBuffer.current += key;
           term.current.write(key);
-          break;
       }
     });
 
     return () => {
+      window.removeEventListener("resize", fitAddon.current.fit);
       socket.current?.close();
       term.current?.dispose();
     };
-  }, []);
+  }, [agentId]);
 
   const printPrompt = () => {
-    term.current?.write("> ");
+    // user@agent:~$ in blue, then reset, then space
+    term.current.write(`\x1b[34muser@${agentId}:~$\x1b[0m `);
   };
 
   return (
-    <div
-      ref={terminalRef}
-      className="w-full h-full bg-black rounded shadow-lg"
-      style={{ height: '100%', minHeight: '400px' }}
-    />
+    <div className="flex flex-col h-full">
+      <div className="bg-black text-green-400 p-4 rounded-t-lg font-mono">
+        Terminal conectada al agente: {agentId}
+      </div>
+      <div
+        ref={terminalRef}
+        className="flex-1 bg-black rounded-b-lg overflow-hidden font-mono"
+        style={{ width: "100%", height: "100%" }}
+      />
+    </div>
   );
-};
-
-export default TerminalConsole;
+}
