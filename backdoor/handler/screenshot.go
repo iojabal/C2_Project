@@ -13,7 +13,7 @@ import (
 	"github.com/kbinani/screenshot"
 )
 
-func ScreenshotHandler(t transport.Transport) {
+func ScreenshotHandler(t transport.Transport, args []string) {
 	img, err := screenshot.CaptureDisplay(0)
 	if err != nil {
 		t.Write([]byte("Error al capturar pantalla\n"))
