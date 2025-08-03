@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { 
+import {
   ArrowLeft,
   Calendar,
   User,
@@ -24,8 +24,10 @@ import {
   HardDrive,
   Wifi,
   Terminal,
-  FileText
+  FileText,
 } from "lucide-react";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 
 const ReportDetail = () => {
   const { id } = useParams();
@@ -40,7 +42,7 @@ const ReportDetail = () => {
     persistence: false,
     files: false,
     exfiltrated: false,
-    commands: false
+    commands: false,
   });
 
   useEffect(() => {
@@ -51,14 +53,16 @@ const ReportDetail = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`http://localhost:5000/api/v1/reports/${id}`);
+      const response = await fetch(
+        `http://localhost:5000/api/v1/reports/${id}`
+      );
       if (!response.ok) {
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
       const data = await response.json();
       setReport(data.data);
     } catch (err) {
-      console.error('Error fetching report:', err);
+      console.error("Error fetching report:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -66,34 +70,34 @@ const ReportDetail = () => {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'Fecha no disponible';
-    
+    if (!dateString) return "Fecha no disponible";
+
     try {
       let date;
-      if (dateString.includes('T')) {
+      if (dateString.includes("T")) {
         date = new Date(dateString);
-      } else if (dateString.includes(' ')) {
-        const mainPart = dateString.split(' ').slice(0, 2).join(' ');
-        const cleanPart = mainPart.replace(/\.\d+/, '');
+      } else if (dateString.includes(" ")) {
+        const mainPart = dateString.split(" ").slice(0, 2).join(" ");
+        const cleanPart = mainPart.replace(/\.\d+/, "");
         date = new Date(cleanPart);
       } else {
         date = new Date(dateString);
       }
-      
+
       if (isNaN(date.getTime())) {
-        return 'Fecha inválida';
+        return "Fecha inválida";
       }
-      
-      return date.toLocaleString('es-ES', {
-        year: 'numeric',
-        month: 'long',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
+
+      return date.toLocaleString("es-ES", {
+        year: "numeric",
+        month: "long",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
       });
     } catch (error) {
-      return 'Error en fecha';
+      return "Error en fecha";
     }
   };
 
@@ -103,41 +107,81 @@ const ReportDetail = () => {
 
   const downloadJson = () => {
     const dataStr = JSON.stringify(report, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const dataUri =
+      "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
     const exportFileDefaultName = `report_${report.hostname}_${report.id}.json`;
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
+
+    const linkElement = document.createElement("a");
+    linkElement.setAttribute("href", dataUri);
+    linkElement.setAttribute("download", exportFileDefaultName);
     linkElement.click();
+  };
+  const exportPdf = async () => {
+    const element = document.getElementById("report-container");
+    if (!element) return alert("Contenedor no encontrado");
+
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      onclone: (clonedDoc) => {
+        const clone = clonedDoc.getElementById("report-container");
+        // fondo blanco base
+        clone.style.background = "#ffffff";
+        // elimina gradientes de todo el subtree
+        clone.querySelectorAll("*").forEach((el) => {
+          el.style.backgroundImage = "none";
+        });
+      },
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "px",
+      format: [canvas.width, canvas.height],
+    });
+
+    pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+    pdf.save(`report_${report.hostname}_${report.id}.pdf`);
   };
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
-      [section]: !prev[section]
+      [section]: !prev[section],
     }));
   };
 
   const InfoCard = ({ title, value, icon: Icon, type = "default" }) => (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${
-          type === "danger" ? "bg-red-100 text-red-600" :
-          type === "warning" ? "bg-orange-100 text-orange-600" :
-          type === "success" ? "bg-green-100 text-green-600" :
-          "bg-blue-100 text-blue-600"
-        }`}>
+        <div
+          className={`p-2 rounded-lg ${
+            type === "danger"
+              ? "bg-red-100 text-red-600"
+              : type === "warning"
+              ? "bg-orange-100 text-orange-600"
+              : type === "success"
+              ? "bg-green-100 text-green-600"
+              : "bg-blue-100 text-blue-600"
+          }`}
+        >
           <Icon className="w-4 h-4" />
         </div>
         <div className="flex-1">
           <p className="text-sm text-gray-600">{title}</p>
-          <p className={`font-semibold ${
-            type === "danger" ? "text-red-900" :
-            type === "warning" ? "text-orange-900" :
-            type === "success" ? "text-green-900" :
-            "text-gray-900"
-          }`}>{value}</p>
+          <p
+            className={`font-semibold ${
+              type === "danger"
+                ? "text-red-900"
+                : type === "warning"
+                ? "text-orange-900"
+                : type === "success"
+                ? "text-green-900"
+                : "text-gray-900"
+            }`}
+          >
+            {value}
+          </p>
         </div>
       </div>
     </div>
@@ -146,9 +190,9 @@ const ReportDetail = () => {
   const CollapsibleSection = ({ title, items, type, isExpanded, onToggle }) => {
     const normalizedItems = items || [];
     const itemCount = normalizedItems.length;
-    
+
     const parseContent = (item) => {
-      if (typeof item === 'string') {
+      if (typeof item === "string") {
         try {
           return JSON.parse(item);
         } catch {
@@ -159,29 +203,37 @@ const ReportDetail = () => {
     };
 
     const StructuredView = ({ data, itemType }) => {
-      if (itemType === 'persistence' && typeof data === 'object') {
+      if (itemType === "persistence" && typeof data === "object") {
         return (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
               <Shield className="w-4 h-4 text-orange-600" />
-              <span className="font-semibold text-orange-800">Mecanismo de Persistencia</span>
+              <span className="font-semibold text-orange-800">
+                Mecanismo de Persistencia
+              </span>
             </div>
             {Object.entries(data).map(([key, value]) => (
               <div key={key} className="grid grid-cols-3 gap-4 text-sm">
-                <div className="font-medium text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</div>
-                <div className="col-span-2 font-mono text-gray-800 break-all">{value}</div>
+                <div className="font-medium text-gray-600 capitalize">
+                  {key.replace(/([A-Z])/g, " $1").trim()}:
+                </div>
+                <div className="col-span-2 font-mono text-gray-800 break-all">
+                  {value}
+                </div>
               </div>
             ))}
           </div>
         );
       }
 
-      if (itemType === 'processes' && typeof data === 'object') {
+      if (itemType === "processes" && typeof data === "object") {
         return (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
               <Cpu className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-blue-800">Información del Proceso</span>
+              <span className="font-semibold text-blue-800">
+                Información del Proceso
+              </span>
             </div>
             <div className="grid grid-cols-1 gap-2 text-sm">
               {data.name && (
@@ -205,7 +257,9 @@ const ReportDetail = () => {
               {data.memory !== undefined && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">Memoria:</span>
-                  <span className="font-mono text-gray-800">{data.memory} MB</span>
+                  <span className="font-mono text-gray-800">
+                    {data.memory} MB
+                  </span>
                 </div>
               )}
             </div>
@@ -213,52 +267,70 @@ const ReportDetail = () => {
         );
       }
 
-      if (itemType === 'connections' && typeof data === 'object') {
+      if (itemType === "connections" && typeof data === "object") {
         return (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
               <Network className="w-4 h-4 text-green-600" />
-              <span className="font-semibold text-green-800">Conexión de Red</span>
+              <span className="font-semibold text-green-800">
+                Conexión de Red
+              </span>
             </div>
             <div className="grid grid-cols-1 gap-2 text-sm">
               {(data.protocol || data.Protocol) && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">Protocolo:</span>
-                  <span className="font-mono text-gray-800 uppercase">{data.protocol || data.Protocol}</span>
+                  <span className="font-mono text-gray-800 uppercase">
+                    {data.protocol || data.Protocol}
+                  </span>
                 </div>
               )}
               {(data.local || data.Local) && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">Local:</span>
-                  <span className="font-mono text-gray-800">{data.local || data.Local}</span>
+                  <span className="font-mono text-gray-800">
+                    {data.local || data.Local}
+                  </span>
                 </div>
               )}
               {(data.remote || data.Remote) && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">Remoto:</span>
-                  <span className="font-mono text-gray-800">{data.remote || data.Remote}</span>
+                  <span className="font-mono text-gray-800">
+                    {data.remote || data.Remote}
+                  </span>
                 </div>
               )}
               {(data.status || data.Status) && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">Estado:</span>
-                  <span className={`font-mono px-2 py-1 rounded text-xs ${
-                    (data.status || data.Status) === 'ESTABLISHED' ? 'bg-green-100 text-green-800' :
-                    (data.status || data.Status) === 'LISTEN' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>{data.status || data.Status}</span>
+                  <span
+                    className={`font-mono px-2 py-1 rounded text-xs ${
+                      (data.status || data.Status) === "ESTABLISHED"
+                        ? "bg-green-100 text-green-800"
+                        : (data.status || data.Status) === "LISTEN"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {data.status || data.Status}
+                  </span>
                 </div>
               )}
               {(data.ip || data.IP) && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">IP:</span>
-                  <span className="font-mono text-gray-800">{data.ip || data.IP}</span>
+                  <span className="font-mono text-gray-800">
+                    {data.ip || data.IP}
+                  </span>
                 </div>
               )}
               {(data.port || data.Port) && (
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-600">Puerto:</span>
-                  <span className="font-mono text-gray-800">{data.port || data.Port}</span>
+                  <span className="font-mono text-gray-800">
+                    {data.port || data.Port}
+                  </span>
                 </div>
               )}
             </div>
@@ -266,12 +338,14 @@ const ReportDetail = () => {
         );
       }
 
-      if (itemType === 'commands' && typeof data === 'object') {
+      if (itemType === "commands" && typeof data === "object") {
         return (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
               <Terminal className="w-4 h-4 text-orange-600" />
-              <span className="font-semibold text-orange-800">Comando Ejecutado</span>
+              <span className="font-semibold text-orange-800">
+                Comando Ejecutado
+              </span>
             </div>
             <div className="bg-gray-900 rounded-lg p-3">
               <div className="flex items-start gap-2">
@@ -298,7 +372,7 @@ const ReportDetail = () => {
         );
       }
 
-      if (itemType === 'commands' && typeof data === 'string') {
+      if (itemType === "commands" && typeof data === "string") {
         return (
           <div className="bg-gray-900 rounded-lg p-3">
             <div className="flex items-start gap-2">
@@ -311,16 +385,23 @@ const ReportDetail = () => {
         );
       }
 
-      if (typeof data === 'object') {
+      if (typeof data === "object") {
         return (
           <div className="space-y-2">
             {Object.entries(data).map(([key, value]) => (
-              <div key={key} className="flex flex-col sm:flex-row sm:justify-between gap-1">
+              <div
+                key={key}
+                className="flex flex-col sm:flex-row sm:justify-between gap-1"
+              >
                 <span className="font-medium text-gray-600 capitalize">
-                  {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}:
+                  {key
+                    .replace(/([A-Z])/g, " $1")
+                    .replace(/_/g, " ")
+                    .trim()}
+                  :
                 </span>
                 <span className="font-mono text-gray-800 break-all text-sm">
-                  {typeof value === 'object' ? JSON.stringify(value) : value}
+                  {typeof value === "object" ? JSON.stringify(value) : value}
                 </span>
               </div>
             ))}
@@ -334,7 +415,7 @@ const ReportDetail = () => {
         </div>
       );
     };
-    
+
     return (
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <button
@@ -342,23 +423,30 @@ const ReportDetail = () => {
           className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
         >
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${
-              type === 'exfiltrated' ? 'bg-red-100' :
-              type === 'commands' ? 'bg-orange-100' :
-              type === 'persistence' ? 'bg-orange-100' :
-              type === 'processes' ? 'bg-blue-100' :
-              type === 'connections' ? 'bg-green-100' :
-              'bg-blue-100'
-            }`}>
-              {type === 'exfiltrated' ? (
+            <div
+              className={`p-2 rounded-lg ${
+                type === "exfiltrated"
+                  ? "bg-red-100"
+                  : type === "commands"
+                  ? "bg-orange-100"
+                  : type === "persistence"
+                  ? "bg-orange-100"
+                  : type === "processes"
+                  ? "bg-blue-100"
+                  : type === "connections"
+                  ? "bg-green-100"
+                  : "bg-blue-100"
+              }`}
+            >
+              {type === "exfiltrated" ? (
                 <AlertTriangle className="w-4 h-4 text-red-600" />
-              ) : type === 'commands' ? (
+              ) : type === "commands" ? (
                 <Terminal className="w-4 h-4 text-orange-600" />
-              ) : type === 'persistence' ? (
+              ) : type === "persistence" ? (
                 <Shield className="w-4 h-4 text-orange-600" />
-              ) : type === 'processes' ? (
+              ) : type === "processes" ? (
                 <Cpu className="w-4 h-4 text-blue-600" />
-              ) : type === 'connections' ? (
+              ) : type === "connections" ? (
                 <Network className="w-4 h-4 text-green-600" />
               ) : (
                 <Database className="w-4 h-4 text-blue-600" />
@@ -369,33 +457,56 @@ const ReportDetail = () => {
               <p className="text-sm text-gray-600">{itemCount} elementos</p>
             </div>
           </div>
-          {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+          {isExpanded ? (
+            <ChevronDown className="w-5 h-5" />
+          ) : (
+            <ChevronRight className="w-5 h-5" />
+          )}
         </button>
-        
+
         {isExpanded && itemCount > 0 && (
           <div className="border-t border-gray-200 p-6">
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {normalizedItems.map((item, index) => {
                 const parsedItem = parseContent(item);
-                
+
                 return (
-                  <div key={index} className={`rounded-lg p-4 border ${
-                    type === 'exfiltrated' ? 'bg-red-50 border-red-200' :
-                    type === 'commands' ? 'bg-orange-50 border-orange-200' :
-                    type === 'persistence' ? 'bg-orange-50 border-orange-200' :
-                    type === 'processes' ? 'bg-blue-50 border-blue-200' :
-                    type === 'connections' ? 'bg-green-50 border-green-200' :
-                    'bg-gray-50 border-gray-200'
-                  }`}>
-                    {type === 'exfiltrated' && typeof parsedItem === 'object' ? (
+                  <div
+                    key={index}
+                    className={`rounded-lg p-4 border ${
+                      type === "exfiltrated"
+                        ? "bg-red-50 border-red-200"
+                        : type === "commands"
+                        ? "bg-orange-50 border-orange-200"
+                        : type === "persistence"
+                        ? "bg-orange-50 border-orange-200"
+                        : type === "processes"
+                        ? "bg-blue-50 border-blue-200"
+                        : type === "connections"
+                        ? "bg-green-50 border-green-200"
+                        : "bg-gray-50 border-gray-200"
+                    }`}
+                  >
+                    {type === "exfiltrated" &&
+                    typeof parsedItem === "object" ? (
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 mb-2">
                           <HardDrive className="w-4 h-4 text-red-600" />
-                          <span className="font-semibold text-red-800">Archivo Exfiltrado</span>
+                          <span className="font-semibold text-red-800">
+                            Archivo Exfiltrado
+                          </span>
                         </div>
                         <div className="text-sm">
-                          <p><span className="font-medium">Ruta:</span> {parsedItem.path}</p>
-                          <p><span className="font-medium">SHA256:</span> <span className="font-mono text-xs break-all">{parsedItem.sha256}</span></p>
+                          <p>
+                            <span className="font-medium">Ruta:</span>{" "}
+                            {parsedItem.path}
+                          </p>
+                          <p>
+                            <span className="font-medium">SHA256:</span>{" "}
+                            <span className="font-mono text-xs break-all">
+                              {parsedItem.sha256}
+                            </span>
+                          </p>
                         </div>
                       </div>
                     ) : (
@@ -407,7 +518,7 @@ const ReportDetail = () => {
             </div>
           </div>
         )}
-        
+
         {isExpanded && itemCount === 0 && (
           <div className="border-t border-gray-200 p-6 text-center">
             <p className="text-gray-500">No hay elementos para mostrar</p>
@@ -438,7 +549,9 @@ const ReportDetail = () => {
         <div className="max-w-6xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
             <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-red-800 mb-2">Error al cargar el reporte</h2>
+            <h2 className="text-xl font-semibold text-red-800 mb-2">
+              Error al cargar el reporte
+            </h2>
             <p className="text-red-700 mb-4">{error}</p>
             <button
               onClick={() => navigate(-1)}
@@ -454,11 +567,16 @@ const ReportDetail = () => {
 
   if (!report) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
+      <div
+        id="report-container"
+        className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6"
+      >
         <div className="max-w-6xl mx-auto">
           <div className="text-center py-12">
             <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-800">Reporte no encontrado</h2>
+            <h2 className="text-xl font-semibold text-gray-800">
+              Reporte no encontrado
+            </h2>
           </div>
         </div>
       </div>
@@ -466,9 +584,19 @@ const ReportDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
+    <div
+      id="report-container"
+      className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6"
+    >
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
+          <button
+            onClick={exportPdf}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Exportar PDF
+          </button>
           <div className="flex items-center gap-4 mb-4">
             <button
               onClick={() => navigate(-1)}
@@ -481,8 +609,12 @@ const ReportDetail = () => {
                 <FileText className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Detalle del Reporte</h1>
-                <p className="text-gray-600">{report.hostname} - {formatDate(report.lastseen)}</p>
+                <h1 className="text-3xl font-bold text-gray-900">
+                  Detalle del Reporte
+                </h1>
+                <p className="text-gray-600">
+                  {report.hostname} - {formatDate(report.lastseen)}
+                </p>
               </div>
             </div>
           </div>
@@ -499,8 +631,12 @@ const ReportDetail = () => {
               onClick={() => setShowRawJson(!showRawJson)}
               className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
-              {showRawJson ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              {showRawJson ? 'Ocultar JSON' : 'Ver JSON'}
+              {showRawJson ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+              {showRawJson ? "Ocultar JSON" : "Ver JSON"}
             </button>
             <button
               onClick={() => copyToClipboard(JSON.stringify(report, null, 2))}
@@ -521,57 +657,49 @@ const ReportDetail = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <InfoCard 
-            title="Hostname" 
-            value={report.hostname} 
-            icon={Monitor} 
+          <InfoCard title="Hostname" value={report.hostname} icon={Monitor} />
+          <InfoCard
+            title="Sistema Operativo"
+            value={`${report.os} ${report.arch}`}
+            icon={Cpu}
           />
-          <InfoCard 
-            title="Sistema Operativo" 
-            value={`${report.os} ${report.arch}`} 
-            icon={Cpu} 
-          />
-          <InfoCard 
-            title="Usuario" 
-            value={report.user || 'N/A'} 
-            icon={User} 
-          />
-          <InfoCard 
-            title="Privilegios" 
-            value={report.elevated ? 'Elevado' : 'Estándar'} 
+          <InfoCard title="Usuario" value={report.user || "N/A"} icon={User} />
+          <InfoCard
+            title="Privilegios"
+            value={report.elevated ? "Elevado" : "Estándar"}
             icon={report.elevated ? Shield : ShieldCheck}
-            type={report.elevated ? 'warning' : 'success'}
+            type={report.elevated ? "warning" : "success"}
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <InfoCard 
-            title="Gateway" 
-            value={report.gateway || 'N/A'} 
-            icon={Network} 
+          <InfoCard
+            title="Gateway"
+            value={report.gateway || "N/A"}
+            icon={Network}
           />
-          <InfoCard 
-            title="IPs Detectadas" 
-            value={report.ips?.length || 0} 
-            icon={Wifi} 
+          <InfoCard
+            title="IPs Detectadas"
+            value={report.ips?.length || 0}
+            icon={Wifi}
           />
-          <InfoCard 
-            title="Servidores DNS" 
-            value={report.dns?.length || 0} 
-            icon={Server} 
+          <InfoCard
+            title="Servidores DNS"
+            value={report.dns?.length || 0}
+            icon={Server}
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <InfoCard 
-            title="Primera Conexión" 
-            value={formatDate(report.firstseen)} 
-            icon={Clock} 
+          <InfoCard
+            title="Primera Conexión"
+            value={formatDate(report.firstseen)}
+            icon={Clock}
           />
-          <InfoCard 
-            title="Última Actividad" 
-            value={formatDate(report.lastseen)} 
-            icon={Activity} 
+          <InfoCard
+            title="Última Actividad"
+            value={formatDate(report.lastseen)}
+            icon={Activity}
           />
         </div>
 
@@ -581,8 +709,12 @@ const ReportDetail = () => {
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-6 h-6 text-orange-600" />
                 <div>
-                  <h3 className="font-semibold text-orange-800">Alerta de Seguridad</h3>
-                  <p className="text-orange-700">Se detectó actividad anti-debug en este sistema</p>
+                  <h3 className="font-semibold text-orange-800">
+                    Alerta de Seguridad
+                  </h3>
+                  <p className="text-orange-700">
+                    Se detectó actividad anti-debug en este sistema
+                  </p>
                 </div>
               </div>
             </div>
@@ -595,7 +727,7 @@ const ReportDetail = () => {
             items={report.processes}
             type="processes"
             isExpanded={expandedSections.processes}
-            onToggle={() => toggleSection('processes')}
+            onToggle={() => toggleSection("processes")}
           />
 
           <CollapsibleSection
@@ -603,7 +735,7 @@ const ReportDetail = () => {
             items={report.connections}
             type="connections"
             isExpanded={expandedSections.connections}
-            onToggle={() => toggleSection('connections')}
+            onToggle={() => toggleSection("connections")}
           />
 
           <CollapsibleSection
@@ -611,7 +743,7 @@ const ReportDetail = () => {
             items={report.persistence}
             type="persistence"
             isExpanded={expandedSections.persistence}
-            onToggle={() => toggleSection('persistence')}
+            onToggle={() => toggleSection("persistence")}
           />
 
           <CollapsibleSection
@@ -619,7 +751,7 @@ const ReportDetail = () => {
             items={report.filesaccessed}
             type="files"
             isExpanded={expandedSections.files}
-            onToggle={() => toggleSection('files')}
+            onToggle={() => toggleSection("files")}
           />
 
           <CollapsibleSection
@@ -627,7 +759,7 @@ const ReportDetail = () => {
             items={report.files_exfiltrated}
             type="exfiltrated"
             isExpanded={expandedSections.exfiltrated}
-            onToggle={() => toggleSection('exfiltrated')}
+            onToggle={() => toggleSection("exfiltrated")}
           />
 
           <CollapsibleSection
@@ -635,7 +767,7 @@ const ReportDetail = () => {
             items={report.commands_executed || report.commandsrun}
             type="commands"
             isExpanded={expandedSections.commands}
-            onToggle={() => toggleSection('commands')}
+            onToggle={() => toggleSection("commands")}
           />
         </div>
 
@@ -649,7 +781,10 @@ const ReportDetail = () => {
                 </h3>
                 <div className="space-y-2">
                   {report.ips.map((ip, index) => (
-                    <div key={index} className="px-3 py-2 bg-gray-50 rounded font-mono text-sm">
+                    <div
+                      key={index}
+                      className="px-3 py-2 bg-gray-50 rounded font-mono text-sm"
+                    >
                       {ip}
                     </div>
                   ))}
@@ -665,7 +800,10 @@ const ReportDetail = () => {
                 </h3>
                 <div className="space-y-2">
                   {report.dns.map((dns, index) => (
-                    <div key={index} className="px-3 py-2 bg-gray-50 rounded font-mono text-sm">
+                    <div
+                      key={index}
+                      className="px-3 py-2 bg-gray-50 rounded font-mono text-sm"
+                    >
                       {dns}
                     </div>
                   ))}
