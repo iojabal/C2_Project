@@ -21,7 +21,7 @@ type AuditReport struct {
 	Gateway       string             `bson:"gateway" json:"gateway"`
 	DNS           []string           `bson:"dns" json:"dns"`
 	Persistence   []interface{}      `bson:"persistence" json:"persistence"`
-	AntiDebug     bool               `bson:"antidebug" json:"antidebug"`
+	AntiDebug     bool               `bson:"antidebug" json:"anti_debug"`
 	Processes     []ProcessInfo      `bson:"processes" json:"processes"`
 	Connections   []ConnInfo         `bson:"connections" json:"connections"`
 	CommandsRun   []string           `bson:"commandsrun" json:"commands_executed"`
