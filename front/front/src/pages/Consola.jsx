@@ -11,13 +11,6 @@ export default function Consola() {
 
   const activeAgents = agents.filter(a => a.Connected && a.Active);
 
-  // Debug logs
-  useEffect(() => {
-    console.log("🖥️ Consola - Total agentes:", agents.length);
-    console.log("🖥️ Consola - Agentes activos:", activeAgents.length);
-    console.log("🖥️ Consola - Estado conexión:", connectionStatus);
-  }, [agents, activeAgents, connectionStatus]);
-
   // Efecto para verificar si el agente activo sigue disponible
   useEffect(() => {
     if (activeAgent) {
@@ -25,7 +18,6 @@ export default function Consola() {
       if (!stillActive) {
         setActiveAgent(null);
         localStorage.removeItem("activeAgentId");
-        console.log("🔄 Agente activo removido porque ya no está disponible");
       }
     }
   }, [activeAgents, activeAgent]);
@@ -37,10 +29,8 @@ export default function Consola() {
       const savedAgent = activeAgents.find(a => a.UUID === savedAgentId);
       if (savedAgent) {
         setActiveAgent(savedAgent);
-        console.log("🔄 Agente restaurado desde localStorage:", savedAgent.Hostname);
       } else {
         localStorage.removeItem("activeAgentId");
-        console.log("🔄 Agente guardado ya no está disponible, limpiando localStorage");
       }
     }
   }, [activeAgents]);
@@ -49,22 +39,10 @@ export default function Consola() {
     setActiveAgent(agent);
     localStorage.setItem("activeAgentId", agent.UUID);
     setTerminalKey(k => k + 1);
-    console.log("🎯 Agente seleccionado:", agent.Hostname);
   };
 
   return (
     <div className="p-6 space-y-10">
-      {/* Debug info */}
-      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
-        <strong>Debug Info:</strong><br/>
-        Estado WebSocket: <span className={`font-mono ${
-          connectionStatus === 'connected' ? 'text-green-600' : 
-          connectionStatus === 'error' ? 'text-red-600' : 'text-yellow-600'
-        }`}>{connectionStatus}</span><br/>
-        Total agentes: <span className="font-mono">{agents.length}</span><br/>
-        Agentes activos: <span className="font-mono">{activeAgents.length}</span>
-      </div>
-
       {/* Consola */}
       <div>
         <h2 className="text-3xl font-semibold mb-4 text-gray-800">
@@ -129,62 +107,3 @@ export default function Consola() {
     </div>
   );
 }
-
-
-// function AgentCard({ agent, onSelect, selected }) {
-//   return (
-//     <div 
-//       className={`p-4 border rounded-lg cursor-pointer transition-all duration-200 ${
-//         selected 
-//           ? "border-blue-500 bg-blue-50 shadow-md" 
-//           : "border-gray-300 bg-white hover:border-gray-400 hover:shadow-sm"
-//       }`}
-//       onClick={onSelect}
-//     >
-//       <div className="flex items-center justify-between mb-2">
-//         <h4 className="font-semibold text-lg text-gray-800">{agent.name}</h4>
-//         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-//           <span className="w-2 h-2 rounded-full mr-1 bg-green-500"></span>
-//           {agent.status}
-//         </span>
-//       </div>
-      
-//       <div className="space-y-1 text-sm text-gray-600">
-//         <div className="flex justify-between">
-//           <span className="font-medium">OS:</span>
-//           <span>{agent.os}</span>
-//         </div>
-//         <div className="flex justify-between">
-//           <span className="font-medium">IP:</span>
-//           <span>{agent.ip}</span>
-//         </div>
-//         <div className="flex justify-between">
-//           <span className="font-medium">Última vez:</span>
-//           <span className="text-xs">{agent.lastSeen}</span>
-//         </div>
-//       </div>
-      
-//       {selected && (
-//         <div className="mt-3 text-xs text-blue-600 font-medium">
-//           ✓ Agente seleccionado
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
-// function TerminalConsole({ agentId }) {
-//   return (
-//     <div className="bg-black text-green-400 p-4 rounded-lg font-mono">
-//       <div className="mb-2">Terminal conectada al agente: {agentId}</div>
-//       <div className="flex">
-//         <span className="text-blue-400">user@agent:~$ </span>
-//         <input 
-//           type="text" 
-//           className="bg-transparent border-none outline-none flex-1 text-green-400"
-//           placeholder="Escribe un comando..."
-//         />
-//       </div>
-//     </div>
-//   );
-// }

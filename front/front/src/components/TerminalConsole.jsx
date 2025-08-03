@@ -13,7 +13,28 @@ export default function TerminalConsole({ agentId }) {
     // Inicializa terminal
     term.current = new Terminal({
       fontSize: 14,
-      theme: { background: "#000000", foreground: "#38a169" }, // text-green-400 on black
+      theme: { 
+        background: "#0a0a0a", 
+        foreground: "#e0e0e0",
+        cursor: "#00ff00",
+        selection: "#444444",
+        black: "#000000",
+        red: "#ff6b6b",
+        green: "#51cf66",
+        yellow: "#ffd93d",
+        blue: "#339af0",
+        magenta: "#cc5de8",
+        cyan: "#22b8cf",
+        white: "#ced4da",
+        brightBlack: "#495057",
+        brightRed: "#ff8787",
+        brightGreen: "#8ce99a",
+        brightYellow: "#ffec99",
+        brightBlue: "#74c0fc",
+        brightMagenta: "#d0bfff",
+        brightCyan: "#99e9f2",
+        brightWhite: "#f8f9fa"
+      },
       cursorBlink: true,
       convertEol: true, // Convierte \n a \r\n automáticamente
     });
@@ -79,18 +100,19 @@ export default function TerminalConsole({ agentId }) {
   }, [agentId]);
 
   const printPrompt = () => {
-    // user@agent:~$ in blue, then reset, then space
-    term.current.write(`\x1b[34muser@${agentId}:~$\x1b[0m `);
+    // user@agent:~$ en cyan brillante, luego reset, luego espacio
+    term.current.write(`\x1b[36muser@${agentId}:~$\x1b[0m `);
   };
 
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-black text-green-400 p-4 rounded-t-lg font-mono">
-        Terminal conectada al agente: {agentId}
+      <div className="bg-gray-900 text-cyan-400 p-4 rounded-t-lg font-mono border-b border-gray-700">
+        <span className="text-gray-300">Terminal conectada al agente:</span> 
+        <span className="text-cyan-400 ml-2">{agentId}</span>
       </div>
       <div
         ref={terminalRef}
-        className="flex-1 bg-black rounded-b-lg overflow-hidden font-mono"
+        className="flex-1 bg-gray-900 rounded-b-lg overflow-hidden font-mono"
         style={{ width: "100%", height: "100%" }}
       />
     </div>
