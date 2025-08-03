@@ -2,9 +2,9 @@ package config
 
 
 const (
-    Host              = "192.168.148.136"
-    Port              = "443"
-    Mode              = "tcp"
+    Host              = "192.168.148.1"
+    Port              = "5000"
+    Mode              = "ws"
     EnablePersistence = true
     AntiDebug         = true
 

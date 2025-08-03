@@ -12,14 +12,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"github.com/jackpal/gateway"
 	"github.com/shirou/gopsutil/process"
 	"github.com/shirou/gopsutil/v3/host"
 	netutl "github.com/shirou/gopsutil/v3/net"
-	"golang.org/x/sys/windows"
-	"golang.org/x/sys/windows/registry"
 )
 
 func GetSysInfo() (hostname, osInfo, arch, userName string, err error) {
@@ -102,7 +99,6 @@ func GetConns() ([]ConnInfo, error) {
 
 	var out []ConnInfo
 	for _, c := range cps {
-		// Manejar direcciones que pueden estar vacías
 		localAddr := ""
 		remoteAddr := ""
 
@@ -115,7 +111,7 @@ func GetConns() ([]ConnInfo, error) {
 		}
 
 		out = append(out, ConnInfo{
-			Protocol: connectionTypeToString(c.Type), // Convertir uint32 a string
+			Protocol: connectionTypeToString(c.Type),
 			Local:    localAddr,
 			Remote:   remoteAddr,
 			Status:   c.Status,
@@ -151,13 +147,26 @@ func GetDefaultGateway() string {
 
 func GetDNS() []string {
 	var out []string
+
 	if runtime.GOOS == "windows" {
-		k, err := registry.OpenKey(registry.LOCAL_MACHINE,
-			`SYSTEM\CurrentControlSet\Services\Tcpip\Parameters`, registry.QUERY_VALUE)
+		// Intentar obtener del registro primero (solo en Windows)
+		registryDNS := GetDNSFromRegistry()
+		if len(registryDNS) > 0 {
+			out = append(out, registryDNS...)
+		}
+
+		// Fallback: usar nslookup
+		cmd := exec.Command("nslookup", "google.com")
+		output, err := cmd.Output()
 		if err == nil {
-			defer k.Close()
-			if v, _, err := k.GetStringValue("NameServer"); err == nil {
-				out = strings.Split(v, ",")
+			lines := strings.Split(string(output), "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "Server:") {
+					parts := strings.Fields(line)
+					if len(parts) >= 2 {
+						out = append(out, parts[1])
+					}
+				}
 			}
 		}
 	} else {
@@ -178,32 +187,73 @@ func GetDNS() []string {
 
 func GetPersistencePoints() []string {
 	var out []string
+
 	if runtime.GOOS == "windows" {
-		// Run keys en HKCU y HKLM
-		for _, path := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
-			k, err := registry.OpenKey(path,
-				`Software\Microsoft\Windows\CurrentVersion\Run`, registry.READ)
-			if err != nil {
-				continue
+		// Windows (igual que antes)
+		windowsPoints := GetWindowsPersistencePoints()
+		out = append(out, windowsPoints...)
+
+		usr, err := user.Current()
+		if err == nil {
+			startupPaths := []string{
+				filepath.Join(usr.HomeDir, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
+				"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
 			}
-			defer k.Close()
-			names, _ := k.ReadValueNames(0)
-			for _, name := range names {
-				if cmd, _, err := k.GetStringValue(name); err == nil {
-					out = append(out, "RunKey: "+name+" -> "+cmd)
+
+			for _, path := range startupPaths {
+				files, err := os.ReadDir(path)
+				if err == nil {
+					for _, file := range files {
+						if !file.IsDir() {
+							out = append(out, "Startup: "+filepath.Join(path, file.Name()))
+						}
+					}
 				}
 			}
 		}
 	} else {
-		// Crontab del usuario
-		cmd := exec.Command("crontab", "-l")
-		buf, err := cmd.Output()
+		// Linux/Unix
+		usr, err := user.Current()
 		if err == nil {
-			for _, line := range strings.Split(string(buf), "\n") {
-				if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
-					out = append(out, "cron: "+line)
+			// Crontab del usuario
+			cmd := exec.Command("crontab", "-l")
+			buf, err := cmd.Output()
+			if err == nil {
+				for _, line := range strings.Split(string(buf), "\n") {
+					if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
+						out = append(out, "cron: "+line)
+					}
 				}
 			}
+
+			// Archivos autostart .desktop
+			autostartPath := filepath.Join(usr.HomeDir, ".config", "autostart")
+			files, err := os.ReadDir(autostartPath)
+			if err == nil {
+				for _, file := range files {
+					if strings.HasSuffix(file.Name(), ".desktop") {
+						out = append(out, "autostart: "+file.Name())
+					}
+				}
+			}
+
+			// Chequeo adicional: archivo ~/.bashrc
+			bashrcPath := filepath.Join(usr.HomeDir, ".bashrc")
+			bashrcContent, err := os.ReadFile(bashrcPath)
+			if err == nil {
+				lines := strings.Split(string(bashrcContent), "\n")
+				for _, line := range lines {
+					if strings.HasSuffix(strings.TrimSpace(line), "&") {
+						out = append(out, "bashrc: "+strings.TrimSpace(line))
+					}
+				}
+			}
+		}
+
+		// Chequear si existe el servicio Systemd
+		servicePath := "/etc/systemd/system/backdoor.service"
+		if _, err := os.Stat(servicePath); err == nil {
+			out = append(out, "systemd: "+servicePath)
 		}
 	}
 	return out
@@ -230,21 +280,25 @@ func GetFileArtifacts() []FileInfo {
 		return out
 	}
 
+	// Limitar a primeros 1000 archivos para evitar que sea muy lento
+	count := 0
+	maxFiles := 1000
+
 	filepath.Walk(usr.HomeDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+		if err != nil || info.IsDir() || count >= maxFiles {
 			return nil
 		}
+
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".txt" || ext == ".pdf" {
+		if ext == ".txt" || ext == ".pdf" || ext == ".doc" || ext == ".docx" {
 			hash, err := hashFile(path)
-			if err != nil {
-				// opcional: loguear el error en lugar de ignorar
-				return nil
+			if err == nil {
+				out = append(out, FileInfo{
+					Path: path,
+					Hash: hash,
+				})
+				count++
 			}
-			out = append(out, FileInfo{
-				Path: path,
-				Hash: hash,
-			})
 		}
 		return nil
 	})
@@ -253,60 +307,53 @@ func GetFileArtifacts() []FileInfo {
 
 func GetCommandHistory() []string {
 	var out []string
+	usr, err := user.Current()
+	if err != nil {
+		return out
+	}
+
 	if runtime.GOOS == "windows" {
-		usr, _ := user.Current()
-		histFile := filepath.Join(usr.HomeDir,
-			`AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`)
-		data, err := os.ReadFile(histFile)
-		if err == nil {
-			out = strings.Split(string(data), "\n")
+		// PowerShell history
+		histFiles := []string{
+			filepath.Join(usr.HomeDir, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"),
+			filepath.Join(usr.HomeDir, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "Visual Studio Code Host_history.txt"),
+		}
+
+		for _, histFile := range histFiles {
+			data, err := os.ReadFile(histFile)
+			if err == nil {
+				lines := strings.Split(string(data), "\n")
+				out = append(out, lines...)
+			}
 		}
 	} else {
-		usr, _ := user.Current()
-		data, err := os.ReadFile(filepath.Join(usr.HomeDir, ".bash_history"))
-		if err == nil {
-			out = strings.Split(string(data), "\n")
+		// Múltiples archivos de historial en Unix
+		histFiles := []string{
+			filepath.Join(usr.HomeDir, ".bash_history"),
+			filepath.Join(usr.HomeDir, ".zsh_history"),
+			filepath.Join(usr.HomeDir, ".history"),
+		}
+
+		for _, histFile := range histFiles {
+			data, err := os.ReadFile(histFile)
+			if err == nil {
+				lines := strings.Split(string(data), "\n")
+				out = append(out, lines...)
+			}
 		}
 	}
-	return out
-}
 
-func isRoot() bool {
-	return os.Geteuid() == 0
-}
-
-func isElevatedWindows() bool {
-	// 1) Abrimos el token del proceso actual
-	var token windows.Token
-	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token)
-	if err != nil {
-		return false
-	}
-	defer token.Close()
-
-	// 2) Obtenemos la información TokenElevation
-	var elevation struct {
-		TokenIsElevated uint32
-	}
-	var outLen uint32
-	err = windows.GetTokenInformation(
-		token,
-		windows.TokenElevation,
-		(*byte)(unsafe.Pointer(&elevation)),
-		uint32(unsafe.Sizeof(elevation)),
-		&outLen,
-	)
-	if err != nil {
-		return false
+	// Filtrar líneas vacías
+	var filtered []string
+	for _, line := range out {
+		if strings.TrimSpace(line) != "" {
+			filtered = append(filtered, line)
+		}
 	}
 
-	// 3) Si TokenIsElevated != 0, somos admin
-	return elevation.TokenIsElevated != 0
+	return filtered
 }
 
 func IsElevated() bool {
-	if runtime.GOOS == "windows" {
-		return isElevatedWindows()
-	}
-	return isRoot()
+	return isElevatedUser() // Esta función está definida en los archivos específicos de cada OS
 }
