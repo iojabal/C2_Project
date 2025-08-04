@@ -22,7 +22,7 @@ func NewInjector(t InjectionType, ach *acheron.Acheron) (ProcessInjector, error)
 	case ProcessInjection:
 		return &ClassicInjector{acheron: ach}, nil
 	case ProcessHollowing:
-		return &HollowingInjector{acheron: ach}, nil
+		return &DLLInjector{acheron: ach}, nil
 	default:
 		return nil, errors.New("tipo de inyección no soportado")
 	}
