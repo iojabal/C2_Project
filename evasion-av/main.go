@@ -41,19 +41,18 @@ func main() {
 
 	log.Println("=== Ejecución iniciada (modo debug) ===")
 
-	// 🔻 DESACTIVADO: Anti-debugging
-	// defenses := anti_analysis.NewDefensiveMeasures()
-	// debugCheck := anti_analysis.NewDebuggingCheck()
-	// if debugCheck.IsDebugged() {
-	// 	log.Println("Debugging detectado en inicio")
-	// 	defenses.Activate()
-	// 	logFile.Sync()
-	// 	return
-	// }
 
-	// 🔻 DESACTIVADO: monitor en segundo plano
-	// monitorChan := make(chan struct{})
-	// go startAntiDebugMonitor(debugCheck, monitorChan)
+	defenses := anti_analysis.NewDefensiveMeasures()
+	debugCheck := anti_analysis.NewDebuggingCheck()
+	if debugCheck.IsDebugged() {
+		log.Println("Debugging detectado en inicio")
+		defenses.Activate()
+		logFile.Sync()
+		return
+	}
+
+	monitorChan := make(chan struct{})
+	go startAntiDebugMonitor(debugCheck, monitorChan)
 
 	// Inicializar Acheron
 	ach, err := acheron.New()

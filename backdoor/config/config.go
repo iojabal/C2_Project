@@ -2,7 +2,7 @@ package config
 
 
 const (
-    Host              = "192.168.148.1"
+    Host              = "asdf"
     Port              = "5000"
     Mode              = "ws"
     EnablePersistence = true
