@@ -7,12 +7,13 @@ const Layout = () => {
   const [collapsed, setCollapsed] = useState(false); // opcional
 
   return (
-    <div className="flex">
+    <div className="flex h-screen overflow-hidden" style={{ background: "#0d1117" }}>
       <Sidebar />
       <main
-        className={`transition-all duration-300 ${
-          collapsed ? "ml-20" : "ml-64"
-        } w-full min-h-screen bg-gray-100 p-8`}
+        className={`transition-all duration-300 flex-1 overflow-auto ${
+          collapsed ? "ml-20" : "ml-72"
+        }`}
+        style={{ background: "#0d1117" }}
       >
         <Outlet />
       </main>
