@@ -1,12 +1,13 @@
-// services/audit_service.go - Actualizar todas las funciones
 package services
 
 import (
 	"context"
+	"fmt"
 	"proyecto_grado/db"
 	"proyecto_grado/models"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -21,7 +22,106 @@ func NewAuditService() *AuditService {
 	}
 }
 
-// services/audit_service.go - Corregir GetAgentsWithReports
+// InsertImmutableReport inserta un log encadenando su hash con el del log anterior.
+// Esto garantiza que cualquier modificación posterior sea matemáticamente detectable.
+func (s *AuditService) InsertImmutableReport(ctx context.Context, report *models.AuditReport) error {
+	col := s.database.Collection("audit_reports")
+
+	// Buscar el último log para obtener su hash y secuencia
+	var lastReport models.AuditReport
+	opts := options.FindOne().SetSort(bson.D{{Key: "sequence", Value: -1}})
+	err := col.FindOne(ctx, bson.M{}, opts).Decode(&lastReport)
+
+	var prevHash string
+	var nextSeq int64 = 1
+
+	if err == nil {
+		// Existe un log anterior: encadenar
+		prevHash = lastReport.Hash
+		nextSeq = lastReport.Sequence + 1
+	} else if err != mongo.ErrNoDocuments {
+		return err
+	} else {
+		// Primer log (genesis): prevHash fijo
+		prevHash = "0000000000000000000000000000000000000000000000000000000000000000"
+	}
+
+	report.Sequence = nextSeq
+	report.PrevHash = prevHash
+	report.Hash = report.ComputeHash(prevHash)
+
+	_, err = col.InsertOne(ctx, report)
+	return err
+}
+
+// VerifyChain recorre todos los logs en orden y verifica que la cadena de hashes sea intacta.
+func (s *AuditService) VerifyChain(ctx context.Context) (*models.ChainVerification, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "sequence", Value: 1}})
+	cursor, err := s.database.Collection("audit_reports").Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var reports []models.AuditReport
+	if err = cursor.All(ctx, &reports); err != nil {
+		return nil, err
+	}
+
+	total := len(reports)
+	if total == 0 {
+		return &models.ChainVerification{
+			Valid:       true,
+			TotalBlocks: 0,
+			Message:     "No hay logs en la cadena",
+		}, nil
+	}
+
+	expectedPrev := "0000000000000000000000000000000000000000000000000000000000000000"
+	for _, r := range reports {
+		// Verificar que el prevHash coincide con el hash del bloque anterior
+		if r.PrevHash != expectedPrev {
+			return &models.ChainVerification{
+				Valid:       false,
+				TotalBlocks: total,
+				TamperedAt:  r.Sequence,
+				Message:     fmt.Sprintf("Cadena rota en secuencia %d: prev_hash no coincide", r.Sequence),
+			}, nil
+		}
+		// Recomputar el hash y comparar con el almacenado
+		recomputed := r.ComputeHash(r.PrevHash)
+		if recomputed != r.Hash {
+			return &models.ChainVerification{
+				Valid:       false,
+				TotalBlocks: total,
+				TamperedAt:  r.Sequence,
+				Message:     fmt.Sprintf("Cadena rota en secuencia %d: hash no coincide (registro alterado)", r.Sequence),
+			}, nil
+		}
+		expectedPrev = r.Hash
+	}
+
+	return &models.ChainVerification{
+		Valid:       true,
+		TotalBlocks: total,
+		Message:     "Integridad de la cadena verificada correctamente",
+	}, nil
+}
+
+// GetReportById obtiene un reporte específico por su ObjectID.
+func (s *AuditService) GetReportById(ctx context.Context, id string) (*models.AuditReport, error) {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, mongo.ErrNoDocuments
+	}
+	var report models.AuditReport
+	err = s.database.Collection("audit_reports").FindOne(ctx, bson.M{"_id": objectID}).Decode(&report)
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
 func (s *AuditService) GetAgentsWithReports(ctx context.Context) ([]models.AgentWithReports, error) {
 	pipeline := []bson.M{
 		{
@@ -57,7 +157,7 @@ func (s *AuditService) GetAgentsWithReports(ctx context.Context) ([]models.Agent
 		},
 		{
 			"$sort": bson.M{
-				"LlstSeen": -1,
+				"lastseen": -1,
 			},
 		},
 	}
@@ -77,9 +177,8 @@ func (s *AuditService) GetAgentsWithReports(ctx context.Context) ([]models.Agent
 }
 
 func (s *AuditService) GetAgentReports(ctx context.Context, agentUUID string) ([]models.AuditReport, error) {
-	// CAMBIO: Buscar por agentid en lugar de uuid
 	filter := bson.M{"agentid": agentUUID}
-	opts := options.Find().SetSort(bson.D{{"lastseen", -1}})
+	opts := options.Find().SetSort(bson.D{{Key: "lastseen", Value: -1}})
 
 	cursor, err := s.database.Collection("audit_reports").Find(ctx, filter, opts)
 	if err != nil {
@@ -95,9 +194,7 @@ func (s *AuditService) GetAgentReports(ctx context.Context, agentUUID string) ([
 	return reports, nil
 }
 
-// services/audit_service.go - Actualizar GetAgentWithReports para ser más flexible
 func (s *AuditService) GetAgentWithReports(ctx context.Context, agentUUID string) (*models.AgentWithReports, error) {
-	// Intentar búsqueda exacta primero
 	pipeline := []bson.M{
 		{
 			"$match": bson.M{"UUID": agentUUID},
@@ -136,7 +233,6 @@ func (s *AuditService) GetAgentWithReports(ctx context.Context, agentUUID string
 	}
 
 	if len(result) == 0 {
-		// Si no encuentra por UUID exacto, intentar búsqueda case-insensitive
 		pipeline[0] = bson.M{
 			"$match": bson.M{
 				"UUID": bson.M{
@@ -165,7 +261,7 @@ func (s *AuditService) GetAgentWithReports(ctx context.Context, agentUUID string
 }
 
 func (s *AuditService) GetAllReports(ctx context.Context) ([]models.AuditReport, error) {
-	opts := options.Find().SetSort(bson.D{{"lastseen", -1}})
+	opts := options.Find().SetSort(bson.D{{Key: "lastseen", Value: -1}})
 	cursor, err := s.database.Collection("audit_reports").Find(ctx, bson.M{}, opts)
 	if err != nil {
 		return nil, err

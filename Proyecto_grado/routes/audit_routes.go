@@ -16,6 +16,8 @@ func SetupAuditRoutes(router *gin.Engine) {
 		v1.GET("/agents-with-reports", auditController.GetAgentsWithReports)
 		v1.GET("/agents/:uuid/reports", auditController.GetAgentReports)
 		v1.GET("/agents/:uuid/with-reports", auditController.GetAgentWithReports)
+		// /reports/verify debe ir ANTES de /reports/:id para evitar conflicto de parámetros
+		v1.GET("/reports/verify", auditController.VerifyChain)
 		v1.GET("/reports/:id", auditController.GetReportById)
 
 		// Reportes generales
