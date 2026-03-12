@@ -2,6 +2,9 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"proyecto_grado/db"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -9,6 +12,9 @@ import (
 
 type AuditReport struct {
 	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
+	Sequence      int64              `bson:"sequence" json:"sequence"`
+	PrevHash      string             `bson:"prev_hash" json:"prev_hash"`
+	Hash          string             `bson:"hash" json:"hash"`
 	AgentID       string             `bson:"agentid" json:"agent_id"`
 	Hostname      string             `bson:"hostname" json:"hostname"`
 	OS            string             `bson:"os" json:"os"`
@@ -26,6 +32,54 @@ type AuditReport struct {
 	Connections   []ConnInfo         `bson:"connections" json:"connections"`
 	CommandsRun   []string           `bson:"commandsrun" json:"commands_executed"`
 	FilesAccessed []FileInfo         `bson:"filesaccessed" json:"files_exfiltrated"`
+}
+
+// ComputeHash calcula SHA256(contenido_del_log + prevHash).
+// Solo incluye campos de datos (excluye ID, Sequence, PrevHash, Hash)
+// para que el hash represente únicamente el contenido observable.
+func (r *AuditReport) ComputeHash(prevHash string) string {
+	type content struct {
+		AgentID       string        `json:"agent_id"`
+		Hostname      string        `json:"hostname"`
+		OS            string        `json:"os"`
+		Arch          string        `json:"arch"`
+		User          string        `json:"user"`
+		Elevated      bool          `json:"elevated"`
+		FirstSeen     string        `json:"firstseen"`
+		LastSeen      string        `json:"last_seen"`
+		IPs           []string      `json:"ips"`
+		Gateway       string        `json:"gateway"`
+		DNS           []string      `json:"dns"`
+		Persistence   []interface{} `json:"persistence"`
+		AntiDebug     bool          `json:"anti_debug"`
+		Processes     []ProcessInfo `json:"processes"`
+		Connections   []ConnInfo    `json:"connections"`
+		CommandsRun   []string      `json:"commands_executed"`
+		FilesAccessed []FileInfo    `json:"files_exfiltrated"`
+	}
+	c := content{
+		AgentID:       r.AgentID,
+		Hostname:      r.Hostname,
+		OS:            r.OS,
+		Arch:          r.Arch,
+		User:          r.User,
+		Elevated:      r.Elevated,
+		FirstSeen:     r.FirstSeen,
+		LastSeen:      r.LastSeen,
+		IPs:           r.IPs,
+		Gateway:       r.Gateway,
+		DNS:           r.DNS,
+		Persistence:   r.Persistence,
+		AntiDebug:     r.AntiDebug,
+		Processes:     r.Processes,
+		Connections:   r.Connections,
+		CommandsRun:   r.CommandsRun,
+		FilesAccessed: r.FilesAccessed,
+	}
+	data, _ := json.Marshal(c)
+	input := append(data, []byte(prevHash)...)
+	sum := sha256.Sum256(input)
+	return hex.EncodeToString(sum[:])
 }
 
 type AgentWithReports struct {
@@ -52,6 +106,13 @@ type ConnInfo struct {
 type FileInfo struct {
 	Path string `json:"path"`
 	Hash string `json:"sha256"`
+}
+
+type ChainVerification struct {
+	Valid       bool   `json:"valid"`
+	TotalBlocks int    `json:"total_blocks"`
+	TamperedAt  int64  `json:"tampered_at,omitempty"`
+	Message     string `json:"message"`
 }
 
 func (r *AuditReport) InsertAuditReport() error {

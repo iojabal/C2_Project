@@ -18,15 +18,12 @@ export default function TerminalConsole({ agentId }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sessionStart] = useState(new Date());
 
-  const printPrompt = useCallback(() => {
-    term.current?.write(`\x1b[1;32mroot\x1b[0m\x1b[37m@\x1b[0m\x1b[1;36m${agentId.slice(0, 8)}\x1b[0m\x1b[37m:~#\x1b[0m `);
-  }, [agentId]);
-
+  // El prompt lo envía el backend — solo limpiamos y pedimos uno nuevo al server
   const clearTerminal = useCallback(() => {
     term.current?.clear();
     term.current?.write("\x1bc");
-    printPrompt();
-  }, [printPrompt]);
+    socket.current?.send("\n");
+  }, []);
 
   useEffect(() => {
     // Init terminal
@@ -87,14 +84,12 @@ export default function TerminalConsole({ agentId }) {
       socket.current.onopen = () => {
         setWsStatus("connected");
         term.current?.writeln("\x1b[1;32m[+] Conexión establecida con el agente\x1b[0m\r\n");
-        printPrompt();
+        // El backend envía el primer prompt automáticamente al conectar
       };
 
       socket.current.onmessage = (evt) => {
-        const response = evt.data.toString();
-        term.current?.write("\r\n" + response.replace(/\n/g, "\r\n"));
-        if (!response.endsWith("\n")) term.current?.write("\r\n");
-        printPrompt();
+        // El backend ya formatea la salida con \r\n e incluye el prompt al final
+        term.current?.write(evt.data.toString());
       };
 
       socket.current.onerror = () => {
@@ -121,12 +116,12 @@ export default function TerminalConsole({ agentId }) {
         return;
       }
 
-      // Ctrl+C → cancelar
+      // Ctrl+C → cancelar línea actual y pedir prompt fresco al server
       if (ctrlKey && code === "KeyC") {
         term.current.write("^C\r\n");
         inputBuffer.current = "";
         historyIndex.current = -1;
-        printPrompt();
+        socket.current?.send("\n");
         return;
       }
 
@@ -140,10 +135,9 @@ export default function TerminalConsole({ agentId }) {
             cmdHistory.current.unshift(cmd);
             if (cmdHistory.current.length > 100) cmdHistory.current.pop();
             historyIndex.current = -1;
-            socket.current?.send(cmd + "\n");
-          } else {
-            printPrompt();
           }
+          // Siempre enviamos al server (vacío → server responde con prompt actualizado)
+          socket.current?.send(cmd + "\n");
           inputBuffer.current = "";
           break;
         }
