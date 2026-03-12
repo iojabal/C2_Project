@@ -7,7 +7,6 @@ import (
 	"proyecto_grado/models"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -106,20 +105,6 @@ func (s *AuditService) VerifyChain(ctx context.Context) (*models.ChainVerificati
 		TotalBlocks: total,
 		Message:     "Integridad de la cadena verificada correctamente",
 	}, nil
-}
-
-// GetReportById obtiene un reporte específico por su ObjectID.
-func (s *AuditService) GetReportById(ctx context.Context, id string) (*models.AuditReport, error) {
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		return nil, mongo.ErrNoDocuments
-	}
-	var report models.AuditReport
-	err = s.database.Collection("audit_reports").FindOne(ctx, bson.M{"_id": objectID}).Decode(&report)
-	if err != nil {
-		return nil, err
-	}
-	return &report, nil
 }
 
 func (s *AuditService) GetAgentsWithReports(ctx context.Context) ([]models.AgentWithReports, error) {
