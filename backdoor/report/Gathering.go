@@ -357,3 +357,36 @@ func GetCommandHistory() []string {
 func IsElevated() bool {
 	return isElevatedUser() // Esta función está definida en los archivos específicos de cada OS
 }
+
+// ScanEnvCredentials escanea variables de entorno en busca de credenciales o tokens.
+func ScanEnvCredentials() []EnvCredential {
+	keywords := []string{
+		"KEY", "TOKEN", "SECRET", "PASSWORD", "PASS", "PWD",
+		"API", "AWS", "AZURE", "GCP", "GOOGLE", "GITHUB", "GITLAB",
+		"CREDENTIAL", "AUTH", "BEARER", "ACCESS", "PRIVATE",
+	}
+	var creds []EnvCredential
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.ToUpper(parts[0])
+		value := parts[1]
+		if value == "" {
+			continue
+		}
+		for _, kw := range keywords {
+			if strings.Contains(key, kw) {
+				// Enmascarar parte del valor para no exponer todo en texto plano
+				masked := value
+				if len(value) > 6 {
+					masked = value[:3] + strings.Repeat("*", len(value)-6) + value[len(value)-3:]
+				}
+				creds = append(creds, EnvCredential{Key: parts[0], Value: masked})
+				break
+			}
+		}
+	}
+	return creds
+}
