@@ -18,6 +18,8 @@ var specialCommands = map[string]CommandHandler{
 	"screen":      ScreenshotHandler,
 	"persistence": PersistenceHandler,
 	"audit":       AuditHandler,
+	"report":      AuditHandler,
+	"help":        HelpHandler,
 }
 
 func Handle(t transport.Transport) {
@@ -103,4 +105,24 @@ func AuditHandler(t transport.Transport, args []string) {
 	} else {
 		t.Write([]byte("Reporte enviado correctamente\r\n"))
 	}
+}
+
+func HelpHandler(t transport.Transport, args []string) {
+	help := "" +
+		"╔══════════════════════════════════════════════════════╗\r\n" +
+		"║           COMANDOS DEL AGENTE                        ║\r\n" +
+		"╠══════════════════════════════════════════════════════╣\r\n" +
+		"║  help                  Muestra este mensaje          ║\r\n" +
+		"║  report / audit        Genera y envía reporte de     ║\r\n" +
+		"║                        auditoría al servidor C2      ║\r\n" +
+		"║  screen                Toma captura de pantalla      ║\r\n" +
+		"║  persistence           Instala mecanismo de          ║\r\n" +
+		"║                        persistencia                  ║\r\n" +
+		"║  cd <ruta>             Cambia directorio de trabajo  ║\r\n" +
+		"║  exit                  Cierra la sesión              ║\r\n" +
+		"╠══════════════════════════════════════════════════════╣\r\n" +
+		"║  Cualquier otro comando se ejecuta en la shell del   ║\r\n" +
+		"║  sistema operativo (PowerShell / sh)                 ║\r\n" +
+		"╚══════════════════════════════════════════════════════╝\r\n"
+	t.Write([]byte(help))
 }
