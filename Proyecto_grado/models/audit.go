@@ -10,52 +10,84 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// ─── Tipos post-exploitation ──────────────────────────────────────────────────
+
+type WiFiNetwork struct {
+	SSID     string `json:"ssid"`
+	Password string `json:"password"`
+}
+
+type LocalUser struct {
+	Username string `json:"username"`
+	IsAdmin  bool   `json:"is_admin"`
+	IsActive bool   `json:"is_active"`
+}
+
+type EnvCredential struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type InstalledApp struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// ─── Reporte de auditoría ─────────────────────────────────────────────────────
+
 type AuditReport struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	Sequence      int64              `bson:"sequence" json:"sequence"`
-	PrevHash      string             `bson:"prev_hash" json:"prev_hash"`
-	Hash          string             `bson:"hash" json:"hash"`
-	AgentID       string             `bson:"agentid" json:"agent_id"`
-	Hostname      string             `bson:"hostname" json:"hostname"`
-	OS            string             `bson:"os" json:"os"`
-	Arch          string             `bson:"arch" json:"arch"`
-	User          string             `bson:"user" json:"user"`
-	Elevated      bool               `bson:"elevated" json:"elevated"`
-	FirstSeen     string             `bson:"firstseen" json:"firstseen"`
-	LastSeen      string             `bson:"lastseen" json:"last_seen"`
-	IPs           []string           `bson:"ips" json:"ips"`
-	Gateway       string             `bson:"gateway" json:"gateway"`
-	DNS           []string           `bson:"dns" json:"dns"`
-	Persistence   []interface{}      `bson:"persistence" json:"persistence"`
-	AntiDebug     bool               `bson:"antidebug" json:"anti_debug"`
-	Processes     []ProcessInfo      `bson:"processes" json:"processes"`
-	Connections   []ConnInfo         `bson:"connections" json:"connections"`
-	CommandsRun   []string           `bson:"commandsrun" json:"commands_executed"`
-	FilesAccessed []FileInfo         `bson:"filesaccessed" json:"files_exfiltrated"`
+	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
+	Sequence        int64              `bson:"sequence" json:"sequence"`
+	PrevHash        string             `bson:"prev_hash" json:"prev_hash"`
+	Hash            string             `bson:"hash" json:"hash"`
+	AgentID         string             `bson:"agentid" json:"agent_id"`
+	Hostname        string             `bson:"hostname" json:"hostname"`
+	OS              string             `bson:"os" json:"os"`
+	Arch            string             `bson:"arch" json:"arch"`
+	User            string             `bson:"user" json:"user"`
+	Elevated        bool               `bson:"elevated" json:"elevated"`
+	FirstSeen       string             `bson:"firstseen" json:"firstseen"`
+	LastSeen        string             `bson:"lastseen" json:"last_seen"`
+	IPs             []string           `bson:"ips" json:"ips"`
+	Gateway         string             `bson:"gateway" json:"gateway"`
+	DNS             []string           `bson:"dns" json:"dns"`
+	Persistence     []interface{}      `bson:"persistence" json:"persistence"`
+	AntiDebug       bool               `bson:"antidebug" json:"anti_debug"`
+	Processes       []ProcessInfo      `bson:"processes" json:"processes"`
+	Connections     []ConnInfo         `bson:"connections" json:"connections"`
+	CommandsRun     []string           `bson:"commandsrun" json:"commands_executed"`
+	FilesAccessed   []FileInfo         `bson:"filesaccessed" json:"files_exfiltrated"`
+	// ── Post-exploitation ─────────────────────────────────────────────────────
+	WiFiNetworks    []WiFiNetwork      `bson:"wifi_networks" json:"wifi_networks"`
+	LocalUsers      []LocalUser        `bson:"local_users" json:"local_users"`
+	SecurityProds   []string           `bson:"security_products" json:"security_products"`
+	EnvCredentials  []EnvCredential    `bson:"env_credentials" json:"env_credentials"`
+	TokenPrivileges []string           `bson:"token_privileges" json:"token_privileges"`
+	BrowserProfiles []string           `bson:"browser_profiles" json:"browser_profiles"`
+	InstalledApps   []InstalledApp     `bson:"installed_apps" json:"installed_apps"`
+	DomainName      string             `bson:"domain_name" json:"domain_name"`
 }
 
 // ComputeHash calcula SHA256(contenido_del_log + prevHash).
-// Solo incluye campos de datos (excluye ID, Sequence, PrevHash, Hash)
-// para que el hash represente únicamente el contenido observable.
 func (r *AuditReport) ComputeHash(prevHash string) string {
 	type content struct {
-		AgentID       string        `json:"agent_id"`
-		Hostname      string        `json:"hostname"`
-		OS            string        `json:"os"`
-		Arch          string        `json:"arch"`
-		User          string        `json:"user"`
-		Elevated      bool          `json:"elevated"`
-		FirstSeen     string        `json:"firstseen"`
-		LastSeen      string        `json:"last_seen"`
-		IPs           []string      `json:"ips"`
-		Gateway       string        `json:"gateway"`
-		DNS           []string      `json:"dns"`
-		Persistence   []interface{} `json:"persistence"`
-		AntiDebug     bool          `json:"anti_debug"`
-		Processes     []ProcessInfo `json:"processes"`
-		Connections   []ConnInfo    `json:"connections"`
-		CommandsRun   []string      `json:"commands_executed"`
-		FilesAccessed []FileInfo    `json:"files_exfiltrated"`
+		AgentID         string         `json:"agent_id"`
+		Hostname        string         `json:"hostname"`
+		OS              string         `json:"os"`
+		Arch            string         `json:"arch"`
+		User            string         `json:"user"`
+		Elevated        bool           `json:"elevated"`
+		FirstSeen       string         `json:"firstseen"`
+		LastSeen        string         `json:"last_seen"`
+		IPs             []string       `json:"ips"`
+		Gateway         string         `json:"gateway"`
+		DNS             []string       `json:"dns"`
+		Persistence     []interface{}  `json:"persistence"`
+		AntiDebug       bool           `json:"anti_debug"`
+		Processes       []ProcessInfo  `json:"processes"`
+		Connections     []ConnInfo     `json:"connections"`
+		CommandsRun     []string       `json:"commands_executed"`
+		FilesAccessed   []FileInfo     `json:"files_exfiltrated"`
 	}
 	c := content{
 		AgentID:       r.AgentID,
