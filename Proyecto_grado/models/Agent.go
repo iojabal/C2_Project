@@ -11,7 +11,7 @@ import (
 )
 
 type Agent struct {
-	Conn      *websocket.Conn `bson:"-"`
+	Conn      *websocket.Conn `bson:"-" json:"-"`
 	UUID      string          `bson:"uuid"`
 	IP        string          `bson:"ip"`
 	Hostname  string          `bson:"hostname"`
@@ -79,7 +79,7 @@ func GetAllAgents() ([]*Agent, error) {
 	}
 	defer cursor.Close(ctx)
 
-	var agents []*Agent
+	agents := make([]*Agent, 0)
 	for cursor.Next(ctx) {
 		var a Agent
 		if err := cursor.Decode(&a); err != nil {
