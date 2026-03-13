@@ -49,6 +49,12 @@ const Sidebar = () => {
       icon: <FileText size={20} />,
       description: "Reportes y análisis"
     },
+    {
+      label: "MSF Evasion",
+      to: "/evasion",
+      icon: <Shield size={20} />,
+      description: "Loader con evasión de AV"
+    },
   ];
 
   const handleNavigation = (label, to) => {

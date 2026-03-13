@@ -5,7 +5,8 @@ import Agentes from "./pages/Agentes";
 import Consola from "./pages/Consola";
 import Generar from "./pages/Generar";
 import Reportes from "./pages/Reportes";
-import ReportDetail from "./pages/ReportDetails"; // Asegúrate de tener este componente
+import ReportDetail from "./pages/ReportDetails";
+import Evasion from "./pages/Evasion";
 // const Historial = () => <h1>Historial</h1>;
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
             <Route path="consola"  element={<Consola />} />
             <Route path="generar"   element={<Generar />} />
             <Route path="reportes" element={<Reportes />} />
+            <Route path="evasion" element={<Evasion />} />
             <Route path="/report/:id" element={<ReportDetail />} />
           </Route>
         </Routes>
