@@ -185,7 +185,7 @@ const Agentes = () => {
       const res = await fetch("http://localhost:5000/agents");
       if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
       const data = await res.json();
-      setAllAgents(data);
+      setAllAgents(Array.isArray(data) ? data : []);
       setLastUpdate(new Date());
     } catch (err) {
       setError(err.message);
