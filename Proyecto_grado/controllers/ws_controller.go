@@ -89,11 +89,28 @@ func AgentsWSHandler(w http.ResponseWriter, r *http.Request) {
 	agentsWSClients[conn] = true
 	clientsMu.Unlock()
 
+	// Limpiar al desconectar
+	defer func() {
+		clientsMu.Lock()
+		delete(agentsWSClients, conn)
+		clientsMu.Unlock()
+		conn.Close()
+	}()
+
 	// Envío inicial de la lista
 	if err := conn.WriteJSON(agentsSlice()); err != nil {
 		log.Println("[-] Error enviando lista inicial:", err)
+		return
 	}
-	// No leemos más: mantenemos la conexión abierta para futuros broadcasts
+
+	// Bloquear para mantener la conexión viva hasta que el cliente cierre.
+	// El frontend no envía mensajes pero ReadMessage bloqueará hasta
+	// que haya un error de red o cierre desde el cliente.
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
+	}
 }
 
 // Maneja conexiones de agentes en /ws
