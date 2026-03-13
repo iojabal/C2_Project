@@ -1,856 +1,632 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import PDFGenerator from '../components/PDFGenerator'; // Ajusta la ruta según tu estructura
-import { 
-  ArrowLeft,
-  User,
-  Shield,
-  ShieldCheck,
-  Network,
-  Monitor,
-  Database,
-  Activity,
-  AlertTriangle,
-  Clock,
-  Download,
-  Copy,
-  Eye,
-  EyeOff,
-  ChevronDown,
-  ChevronRight,
-  Server,
-  Cpu,
-  HardDrive,
-  Wifi,
-  Terminal,
-  FileText,
-  Camera,
-  Maximize2,
-  X
+import {
+  ArrowLeft, Shield, Network, Monitor, Database,
+  Activity, AlertTriangle, Clock, Download, Copy, Eye, EyeOff,
+  ChevronDown, ChevronRight, Server, Cpu, HardDrive, Wifi, Terminal,
+  FileText, Camera, Maximize2, X, Hash, Link, Globe, Key,
 } from "lucide-react";
 
-const ReportDetail = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showRawJson, setShowRawJson] = useState(false);
-  const [screenshotError, setScreenshotError] = useState(false);
-  const [showScreenshotModal, setShowScreenshotModal] = useState(false);
-  const [showPDFGenerator, setShowPDFGenerator] = useState(false);
-  const [expandedSections, setExpandedSections] = useState({
-    processes: false,
-    connections: false,
-    persistence: false,
-    files: false,
-    exfiltrated: false,
-    commands: false,
-    screenshot: false
+// ─── Paleta ───────────────────────────────────────────────────────────────────
+const BG     = "#0d1117";
+const CARD   = "#161b22";
+const CARD2  = "#1c2128";
+const BORDER = "#21262d";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatDate(s) {
+  if (!s) return "—";
+  try {
+    const d = s.includes("T")
+      ? new Date(s)
+      : new Date(s.split(" ").slice(0, 2).join(" ").replace(/\.\d+/, ""));
+    if (isNaN(d)) return "—";
+    return d.toLocaleString("es-ES", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return "—"; }
+}
+
+// ─── Componentes base ─────────────────────────────────────────────────────────
+function Section({ icon: Icon, label, count, color = "#58a6ff", children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ background: CARD, borderColor: BORDER }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-white/[0.02]"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
+            <Icon size={14} style={{ color }} />
+          </div>
+          <span className="font-semibold text-sm" style={{ color: "#e6edf3" }}>{label}</span>
+          {count !== undefined && (
+            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
+              style={{ background: `${color}15`, color, border: `1px solid ${color}30` }}>
+              {count}
+            </span>
+          )}
+        </div>
+        {open
+          ? <ChevronDown size={14} style={{ color: "#6e7681" }} />
+          : <ChevronRight size={14} style={{ color: "#6e7681" }} />}
+      </button>
+      {open && <div style={{ borderTop: `1px solid ${BORDER}` }}>{children}</div>}
+    </div>
+  );
+}
+
+function StatBadge({ label, value }) {
+  return (
+    <div className="flex flex-col gap-1 px-4 py-3 rounded-lg border"
+      style={{ background: CARD2, borderColor: BORDER }}>
+      <span className="text-xs" style={{ color: "#484f58" }}>{label}</span>
+      <span className="font-bold font-mono text-lg" style={{ color: "#e6edf3" }}>{value}</span>
+    </div>
+  );
+}
+
+function EmptyState({ msg, sub, icon: Icon = Database }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 gap-2">
+      <Icon size={24} style={{ color: "#30363d" }} />
+      <p className="text-sm" style={{ color: "#6e7681" }}>{msg}</p>
+      {sub && <p className="text-xs font-mono" style={{ color: "#484f58" }}>{sub}</p>}
+    </div>
+  );
+}
+
+// ─── Tabla de Procesos ────────────────────────────────────────────────────────
+function ProcessTable({ processes }) {
+  const [sortBy, setSortBy] = useState("cpu");
+  if (!processes?.length) return <EmptyState msg="Sin procesos registrados" />;
+
+  const sorted = [...processes].sort((a, b) => {
+    if (sortBy === "cpu")  return b.cpu - a.cpu;
+    if (sortBy === "mem")  return b.memory - a.memory;
+    if (sortBy === "pid")  return a.pid - b.pid;
+    return (a.name || "").localeCompare(b.name || "");
   });
 
-  useEffect(() => {
-    fetchReport();
-  }, [id]);
+  const maxCpu = Math.max(...processes.map(p => p.cpu || 0), 1);
+  const maxMem = Math.max(...processes.map(p => p.memory || 0), 1);
 
-  const fetchReport = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`http://localhost:5000/api/v1/reports/${id}`);
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setReport(data.data);
-    } catch (err) {
-      console.error('Error fetching report:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  return (
+    <div className="overflow-auto max-h-96">
+      <table className="w-full text-xs font-mono">
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${BORDER}`, background: CARD2 }}>
+            {[
+              { key: "pid",  label: "PID"    },
+              { key: "name", label: "Nombre" },
+              { key: "cpu",  label: "CPU %"  },
+              { key: "mem",  label: "Mem %"  },
+            ].map(({ key, label }) => (
+              <th key={key}
+                onClick={() => setSortBy(key)}
+                className="px-4 py-2 text-left cursor-pointer select-none"
+                style={{ color: sortBy === key ? "#58a6ff" : "#6e7681" }}>
+                {label} {sortBy === key && "↓"}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.slice(0, 200).map((p, i) => (
+            <tr key={i} className="hover:bg-white/[0.02] transition-colors"
+              style={{ borderBottom: `1px solid ${BORDER}20` }}>
+              <td className="px-4 py-2" style={{ color: "#6e7681" }}>{p.pid}</td>
+              <td className="px-4 py-2 max-w-xs truncate" style={{ color: "#e6edf3" }}>{p.name}</td>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "#21262d" }}>
+                    <div className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(((p.cpu || 0) / maxCpu) * 100, 100)}%`,
+                        background: (p.cpu || 0) > 50 ? "#f85149" : "#3fb950",
+                      }} />
+                  </div>
+                  <span style={{ color: (p.cpu || 0) > 50 ? "#ff7b72" : "#8b949e" }}>
+                    {(p.cpu || 0).toFixed(1)}
+                  </span>
+                </div>
+              </td>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "#21262d" }}>
+                    <div className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(((p.memory || 0) / maxMem) * 100, 100)}%`,
+                        background: "#58a6ff",
+                      }} />
+                  </div>
+                  <span style={{ color: "#8b949e" }}>{(p.memory || 0).toFixed(1)}</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {processes.length > 200 && (
+        <p className="text-center text-xs py-2" style={{ color: "#484f58" }}>
+          Mostrando 200 de {processes.length}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Tabla de Conexiones ──────────────────────────────────────────────────────
+function ConnectionTable({ connections }) {
+  if (!connections?.length) return <EmptyState msg="Sin conexiones registradas" />;
+
+  const statusColor = s => {
+    if (s === "ESTABLISHED") return "#3fb950";
+    if (s === "LISTEN")      return "#58a6ff";
+    if (s === "TIME_WAIT")   return "#d29922";
+    return "#6e7681";
   };
 
-  const handlePDFGenerated = (fileName) => {
-    console.log(`PDF generado: ${fileName}`);
-    // Opcional: mostrar notificación de éxito
-    alert(`PDF generado exitosamente: ${fileName}`);
-  };
+  const est = connections.filter(c => c.status === "ESTABLISHED").length;
+  const lis = connections.filter(c => c.status === "LISTEN").length;
 
-  const getScreenshotUrl = () => {
-    if (!report?.agent_id) {
-      console.log('No agent_id found in report:', report);
-      return null;
-    }
-    const url = `http://localhost:5000/tmp/${report.agent_id}.png`;
-    console.log('Screenshot URL generated:', url);
-    return url;
-  };
-
-  const handleScreenshotError = (event) => {
-    console.error('Screenshot failed to load:', event);
-    console.log('Failed URL:', getScreenshotUrl());
-    console.log('Agent ID:', report?.agent_id || report?.id);
-    setScreenshotError(true);
-  };
-
-  const downloadScreenshot = () => {
-    const url = getScreenshotUrl();
-    if (url) {
-      const agentId = report?.agent_id || report?.id;
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `screenshot_${report.hostname}_${agentId}.png`;
-      link.click();
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Fecha no disponible';
-    
-    try {
-      let date;
-      if (dateString.includes('T')) {
-        date = new Date(dateString);
-      } else if (dateString.includes(' ')) {
-        const mainPart = dateString.split(' ').slice(0, 2).join(' ');
-        const cleanPart = mainPart.replace(/\.\d+/, '');
-        date = new Date(cleanPart);
-      } else {
-        date = new Date(dateString);
-      }
-      
-      if (isNaN(date.getTime())) {
-        return 'Fecha inválida';
-      }
-      
-      return date.toLocaleString('es-ES', {
-        year: 'numeric',
-        month: 'long',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-    } catch (error) {
-      return 'Error en fecha';
-    }
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-  };
-
-  const downloadJson = () => {
-    const dataStr = JSON.stringify(report, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    const exportFileDefaultName = `report_${report.hostname}_${report.id}.json`;
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
-  };
-
-  const toggleSection = (section) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  };
-
-  const ScreenshotModal = () => {
-    if (!showScreenshotModal) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
-        <div className="relative max-w-full max-h-full">
-          <button
-            onClick={() => setShowScreenshotModal(false)}
-            className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
-          >
-            <X className="w-8 h-8" />
-          </button>
-          <img
-            src={getScreenshotUrl()}
-            alt="Captura de pantalla del agente"
-            className="max-w-full max-h-full object-contain rounded-lg"
-            onError={handleScreenshotError}
-          />
-        </div>
+  return (
+    <div>
+      <div className="flex gap-4 px-5 py-2.5 text-xs font-mono"
+        style={{ borderBottom: `1px solid ${BORDER}`, background: CARD2 }}>
+        <span style={{ color: "#3fb950" }}>● {est} ESTABLISHED</span>
+        <span style={{ color: "#58a6ff" }}>● {lis} LISTEN</span>
+        <span style={{ color: "#6e7681" }}>● {connections.length - est - lis} otros</span>
       </div>
-    );
-  };
+      <div className="overflow-auto max-h-72">
+        <table className="w-full text-xs font-mono">
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${BORDER}`, background: "#0d1117" }}>
+              {["Proto", "Local", "Remoto", "Estado"].map(h => (
+                <th key={h} className="px-4 py-2 text-left" style={{ color: "#6e7681" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {connections.map((c, i) => (
+              <tr key={i} className="hover:bg-white/[0.02] transition-colors"
+                style={{ borderBottom: `1px solid ${BORDER}20` }}>
+                <td className="px-4 py-1.5">
+                  <span className="px-1.5 py-0.5 rounded uppercase"
+                    style={{ background: "#21262d", color: "#79c0ff" }}>
+                    {c.protocol}
+                  </span>
+                </td>
+                <td className="px-4 py-1.5 truncate max-w-[160px]" style={{ color: "#8b949e" }}>
+                  {c.local || "—"}
+                </td>
+                <td className="px-4 py-1.5 truncate max-w-[160px]"
+                  style={{ color: c.remote ? "#e6edf3" : "#484f58" }}>
+                  {c.remote || "—"}
+                </td>
+                <td className="px-4 py-1.5" style={{ color: statusColor(c.status) }}>
+                  {c.status || "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
-  const ScreenshotSection = () => {
-    const screenshotUrl = getScreenshotUrl();
-    
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <button
-          onClick={() => toggleSection('screenshot')}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-100">
-              <Camera className="w-4 h-4 text-purple-600" />
-            </div>
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900">Captura de Pantalla</h3>
-              <p className="text-sm text-gray-600">
-                {screenshotError ? 'No disponible' : 'Escritorio del agente'}
-              </p>
+// ─── Historial de comandos ────────────────────────────────────────────────────
+function CommandHistory({ commands }) {
+  if (!commands?.length) return <EmptyState msg="Sin historial de comandos" />;
+  return (
+    <div className="p-4 overflow-auto max-h-80"
+      style={{ background: "#0d1117", fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+      {commands.map((cmd, i) => (
+        <div key={i} className="flex items-start gap-2 py-0.5">
+          <span className="shrink-0 select-none text-sm" style={{ color: "#3fb950" }}>
+            {String(i + 1).padStart(3, " ")} $
+          </span>
+          <span className="text-sm break-all" style={{ color: "#c9d1d9" }}>{cmd}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Archivos ────────────────────────────────────────────────────────────────
+function FileList({ files }) {
+  if (!files?.length) return <EmptyState msg="Sin archivos registrados" />;
+  return (
+    <div>
+      {files.map((f, i) => (
+        <div key={i} className="flex items-start gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors"
+          style={{ borderBottom: i < files.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+          <HardDrive size={13} className="mt-0.5 shrink-0" style={{ color: "#f85149" }} />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-mono truncate" style={{ color: "#e6edf3" }}>{f.path}</p>
+            <p className="text-xs font-mono mt-0.5 break-all" style={{ color: "#484f58" }}>
+              SHA256: {f.sha256 || f.hash || "—"}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Persistencia ────────────────────────────────────────────────────────────
+function PersistenceList({ items }) {
+  if (!items?.length) return <EmptyState msg="Sin mecanismos de persistencia detectados" />;
+  return (
+    <div className="p-4 space-y-2">
+      {items.map((item, i) => {
+        const text = typeof item === "string" ? item : JSON.stringify(item);
+        const colonIdx = text.indexOf(":");
+        const prefix = colonIdx > -1 ? text.slice(0, colonIdx) : text;
+        const rest   = colonIdx > -1 ? text.slice(colonIdx + 1) : "";
+        const tl = text.toLowerCase();
+        const color =
+          tl.includes("runkey") || tl.includes("run") ? "#d29922" :
+          tl.includes("startup")                       ? "#f85149" :
+          tl.includes("cron") || tl.includes("bashrc") ? "#bc8cff" : "#58a6ff";
+        return (
+          <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg"
+            style={{ background: `${color}0d`, border: `1px solid ${color}25` }}>
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" style={{ color }} />
+            <div className="font-mono text-xs min-w-0">
+              <span className="font-semibold" style={{ color }}>{prefix}:</span>
+              <span className="break-all" style={{ color: "#c9d1d9" }}>{rest}</span>
             </div>
           </div>
-          {expandedSections.screenshot ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-        </button>
-        
-        {expandedSections.screenshot && (
-          <div className="border-t border-gray-200 p-6">
-            {screenshotError ? (
-              <div className="text-center py-8">
-                <Camera className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No se pudo cargar la captura de pantalla</p>
-                <p className="text-sm text-gray-500 mt-2">
-                  Archivo esperado: {report?.agent_id || report?.id}.png
-                </p>
-                <p className="text-xs text-gray-400 mt-2">
-                  URL: {getScreenshotUrl()}
-                </p>
-                <button
-                  onClick={() => {
-                    setScreenshotError(false);
-                    console.log('Retrying screenshot load for:', report?.agent_id || report?.id);
-                  }}
-                  className="mt-3 px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                >
-                  Reintentar
-                </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── IPs / DNS como chips ─────────────────────────────────────────────────────
+function ChipList({ items, color = "#58a6ff" }) {
+  if (!items?.length) return <EmptyState msg="Sin datos" />;
+  return (
+    <div className="flex flex-wrap gap-2 px-5 py-4">
+      {items.map((item, i) => (
+        <span key={i} className="px-3 py-1 rounded-full text-xs font-mono"
+          style={{ background: `${color}15`, color, border: `1px solid ${color}30` }}>
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Screenshot ──────────────────────────────────────────────────────────────
+function ScreenshotSection({ agentId, hostname, lastSeen }) {
+  const [loaded, setLoaded] = useState(false);
+  const [err,    setErr]    = useState(false);
+  const [modal,  setModal]  = useState(false);
+  const url = agentId ? `http://localhost:5000/tmp/${agentId}.png` : null;
+
+  if (!url) return <EmptyState msg="Agent ID no disponible" />;
+
+  return (
+    <div className="p-4">
+      {err ? (
+        <EmptyState msg="Captura no disponible" sub={`${agentId}.png`} icon={Camera} />
+      ) : (
+        <div className="space-y-3">
+          <div className="relative rounded-lg overflow-hidden cursor-pointer group"
+            style={{ background: "#0d1117", border: `1px solid ${BORDER}` }}
+            onClick={() => loaded && setModal(true)}>
+            <img src={url} alt="screenshot"
+              className="w-full object-contain max-h-64"
+              onLoad={() => setLoaded(true)}
+              onError={() => setErr(true)}
+              style={{ display: loaded ? "block" : "none" }} />
+            {!loaded && !err && (
+              <div className="flex items-center justify-center h-32">
+                <Camera size={24} style={{ color: "#484f58" }} />
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex gap-2 justify-end">
-                  <button
-                    onClick={() => setShowScreenshotModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                    Ver completa
-                  </button>
-                  <button
-                    onClick={downloadScreenshot}
-                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    Descargar
-                  </button>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 border-2 border-dashed border-gray-200">
-                  <img
-                    src={screenshotUrl}
-                    alt="Captura de pantalla del agente"
-                    className="w-full h-auto rounded-lg shadow-lg cursor-pointer hover:shadow-xl transition-shadow"
-                    onError={handleScreenshotError}
-                    onLoad={() => console.log('Screenshot loaded successfully:', screenshotUrl)}
-                    onClick={() => setShowScreenshotModal(true)}
-                    style={{ maxHeight: '400px', objectFit: 'contain' }}
-                  />
-                </div>
-                <div className="text-sm text-gray-600 bg-purple-50 rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Camera className="w-4 h-4 text-purple-600" />
-                    <span className="font-medium">Información de la captura</span>
-                  </div>
-                  <p><span className="font-medium">Tomada:</span> {formatDate(report.last_seen)}</p>
-                  <p><span className="font-medium">Sistema:</span> {report.hostname} ({report.os})</p>
-                  <p><span className="font-medium">Usuario:</span> {report.user || 'N/A'}</p>
-                </div>
+            )}
+            {loaded && (
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
+                <Maximize2 size={20} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
               </div>
             )}
           </div>
-        )}
-      </div>
-    );
+          <div className="flex items-center justify-between text-xs font-mono" style={{ color: "#6e7681" }}>
+            <span>{hostname} · {formatDate(lastSeen)}</span>
+            <a href={url} download={`screenshot_${agentId}.png`}
+              className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+              <Download size={11} /> Descargar
+            </a>
+          </div>
+        </div>
+      )}
+
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+          onClick={() => setModal(false)}>
+          <button className="absolute top-4 right-4 text-white/60 hover:text-white transition-colors">
+            <X size={24} />
+          </button>
+          <img src={url} alt="fullscreen" className="max-w-full max-h-full rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Blockchain ───────────────────────────────────────────────────────────────
+function BlockchainInfo({ report }) {
+  const { sequence, prev_hash, hash } = report;
+  return (
+    <div className="p-5 space-y-3">
+      {[
+        { label: "Secuencia",     value: `#${sequence ?? "—"}`,          icon: Hash, color: "#58a6ff", mono: false },
+        { label: "Hash bloque",   value: hash || "—",                     icon: Key,  color: "#3fb950", mono: true  },
+        { label: "Hash anterior", value: prev_hash || "genesis",          icon: Link, color: "#6e7681", mono: true  },
+      ].map(({ label, value, icon: Icon, color, mono }) => (
+        <div key={label} className="flex items-start gap-3">
+          <Icon size={13} className="mt-0.5 shrink-0" style={{ color }} />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs" style={{ color: "#484f58" }}>{label}</p>
+            <p className={`text-sm truncate ${mono ? "font-mono" : "font-semibold"}`} style={{ color: "#e6edf3" }}>
+              {value}
+            </p>
+          </div>
+          {mono && value !== "genesis" && (
+            <button className="shrink-0 hover:text-blue-400 transition-colors" style={{ color: "#484f58" }}
+              onClick={() => navigator.clipboard.writeText(value)}>
+              <Copy size={11} />
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+export default function ReportDetail() {
+  const { id }  = useParams();
+  const navigate = useNavigate();
+  const [report,  setReport]  = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
+  const [showJson, setShowJson] = useState(false);
+
+  useEffect(() => { fetchReport(); }, [id]);
+
+  const fetchReport = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`http://localhost:5000/api/v1/reports/${id}`);
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const data = await res.json();
+      setReport(data.data);
+    } catch (e) { setError(e.message); }
+    finally     { setLoading(false);  }
   };
 
-  const InfoCard = ({ title, value, icon: Icon, type = "default" }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
-      <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${
-          type === "danger" ? "bg-red-100 text-red-600" :
-          type === "warning" ? "bg-orange-100 text-orange-600" :
-          type === "success" ? "bg-green-100 text-green-600" :
-          "bg-blue-100 text-blue-600"
-        }`}>
-          <Icon className="w-4 h-4" />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className={`font-semibold ${
-            type === "danger" ? "text-red-900" :
-            type === "warning" ? "text-orange-900" :
-            type === "success" ? "text-green-900" :
-            "text-gray-900"
-          }`}>{value}</p>
-        </div>
+  // ── Estados de carga ──
+  if (loading) return (
+    <div className="flex items-center justify-center h-full" style={{ background: BG }}>
+      <div className="flex items-center gap-3 font-mono text-sm" style={{ color: "#6e7681" }}>
+        <Database size={16} className="animate-pulse" style={{ color: "#58a6ff" }} />
+        Cargando reporte...
       </div>
     </div>
   );
 
-  const CollapsibleSection = ({ title, items, type, isExpanded, onToggle }) => {
-    const normalizedItems = items || [];
-    const itemCount = normalizedItems.length;
-    
-    const parseContent = (item) => {
-      if (typeof item === 'string') {
-        try {
-          return JSON.parse(item);
-        } catch {
-          return item;
-        }
-      }
-      return item;
-    };
+  if (error) return (
+    <div className="flex flex-col items-center justify-center h-full gap-4" style={{ background: BG }}>
+      <AlertTriangle size={32} style={{ color: "#f85149" }} />
+      <p className="text-sm" style={{ color: "#ffa198" }}>{error}</p>
+      <button onClick={() => navigate(-1)}
+        className="px-4 py-2 rounded-lg text-sm"
+        style={{ background: "#21262d", color: "#8b949e", border: `1px solid ${BORDER}` }}>
+        Volver
+      </button>
+    </div>
+  );
 
-    const StructuredView = ({ data, itemType }) => {
-      if (itemType === 'persistence' && typeof data === 'object') {
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Shield className="w-4 h-4 text-orange-600" />
-              <span className="font-semibold text-orange-800">Mecanismo de Persistencia</span>
-            </div>
-            {Object.entries(data).map(([key, value]) => (
-              <div key={key} className="grid grid-cols-3 gap-4 text-sm">
-                <div className="font-medium text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</div>
-                <div className="col-span-2 font-mono text-gray-800 break-all">{value}</div>
-              </div>
-            ))}
-          </div>
-        );
-      }
+  if (!report) return (
+    <div className="flex items-center justify-center h-full" style={{ background: BG }}>
+      <EmptyState msg="Reporte no encontrado" icon={FileText} />
+    </div>
+  );
 
-      if (itemType === 'processes' && typeof data === 'object') {
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Cpu className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-blue-800">Información del Proceso</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              {data.name && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Nombre:</span>
-                  <span className="font-mono text-gray-800">{data.name}</span>
-                </div>
-              )}
-              {data.pid && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">PID:</span>
-                  <span className="font-mono text-gray-800">{data.pid}</span>
-                </div>
-              )}
-              {data.cpu !== undefined && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">CPU:</span>
-                  <span className="font-mono text-gray-800">{data.cpu}%</span>
-                </div>
-              )}
-              {data.memory !== undefined && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Memoria:</span>
-                  <span className="font-mono text-gray-800">{data.memory} MB</span>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
+  const r = report;
+  const cmds = r.commands_executed || r.commandsrun || [];
+  const files = r.files_exfiltrated || r.filesaccessed || [];
 
-      if (itemType === 'connections' && typeof data === 'object') {
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Network className="w-4 h-4 text-green-600" />
-              <span className="font-semibold text-green-800">Conexión de Red</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              {(data.protocol || data.Protocol) && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Protocolo:</span>
-                  <span className="font-mono text-gray-800 uppercase">{data.protocol || data.Protocol}</span>
-                </div>
-              )}
-              {(data.local || data.Local) && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Local:</span>
-                  <span className="font-mono text-gray-800">{data.local || data.Local}</span>
-                </div>
-              )}
-              {(data.remote || data.Remote) && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Remoto:</span>
-                  <span className="font-mono text-gray-800">{data.remote || data.Remote}</span>
-                </div>
-              )}
-              {(data.status || data.Status) && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Estado:</span>
-                  <span className={`font-mono px-2 py-1 rounded text-xs ${
-                    (data.status || data.Status) === 'ESTABLISHED' ? 'bg-green-100 text-green-800' :
-                    (data.status || data.Status) === 'LISTEN' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>{data.status || data.Status}</span>
-                </div>
-              )}
-              {(data.ip || data.IP) && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">IP:</span>
-                  <span className="font-mono text-gray-800">{data.ip || data.IP}</span>
-                </div>
-              )}
-              {(data.port || data.Port) && (
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Puerto:</span>
-                  <span className="font-mono text-gray-800">{data.port || data.Port}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
-
-      if (itemType === 'commands' && typeof data === 'object') {
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Terminal className="w-4 h-4 text-orange-600" />
-              <span className="font-semibold text-orange-800">Comando Ejecutado</span>
-            </div>
-            <div className="bg-gray-900 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <span className="text-green-400 font-mono text-sm">$</span>
-                <code className="text-green-400 font-mono text-sm break-all flex-1">
-                  {data.cmd || data.command || JSON.stringify(data)}
-                </code>
-              </div>
-              {data.output && (
-                <div className="mt-2 pt-2 border-t border-gray-700">
-                  <span className="text-gray-400 text-xs">Salida:</span>
-                  <pre className="text-gray-300 font-mono text-xs mt-1 whitespace-pre-wrap break-all">
-                    {data.output}
-                  </pre>
-                </div>
-              )}
-              {data.timestamp && (
-                <div className="mt-2 text-gray-500 text-xs">
-                  Ejecutado: {new Date(data.timestamp).toLocaleString()}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
-
-      if (itemType === 'commands' && typeof data === 'string') {
-        return (
-          <div className="bg-gray-900 rounded-lg p-3">
-            <div className="flex items-start gap-2">
-              <span className="text-green-400 font-mono text-sm">$</span>
-              <code className="text-green-400 font-mono text-sm break-all flex-1">
-                {data}
-              </code>
-            </div>
-          </div>
-        );
-      }
-
-      if (typeof data === 'object') {
-        return (
-          <div className="space-y-2">
-            {Object.entries(data).map(([key, value]) => (
-              <div key={key} className="flex flex-col sm:flex-row sm:justify-between gap-1">
-                <span className="font-medium text-gray-600 capitalize">
-                  {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}:
-                </span>
-                <span className="font-mono text-gray-800 break-all text-sm">
-                  {typeof value === 'object' ? JSON.stringify(value) : value}
-                </span>
-              </div>
-            ))}
-          </div>
-        );
-      }
-
-      return (
-        <div className="font-mono text-gray-800 text-sm break-all whitespace-pre-wrap">
-          {data}
-        </div>
-      );
-    };
-    
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <button
-          onClick={onToggle}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${
-              type === 'exfiltrated' ? 'bg-red-100' :
-              type === 'commands' ? 'bg-orange-100' :
-              type === 'persistence' ? 'bg-orange-100' :
-              type === 'processes' ? 'bg-blue-100' :
-              type === 'connections' ? 'bg-green-100' :
-              'bg-blue-100'
-            }`}>
-              {type === 'exfiltrated' ? (
-                <AlertTriangle className="w-4 h-4 text-red-600" />
-              ) : type === 'commands' ? (
-                <Terminal className="w-4 h-4 text-orange-600" />
-              ) : type === 'persistence' ? (
-                <Shield className="w-4 h-4 text-orange-600" />
-              ) : type === 'processes' ? (
-                <Cpu className="w-4 h-4 text-blue-600" />
-              ) : type === 'connections' ? (
-                <Network className="w-4 h-4 text-green-600" />
-              ) : (
-                <Database className="w-4 h-4 text-blue-600" />
-              )}
-            </div>
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900">{title}</h3>
-              <p className="text-sm text-gray-600">{itemCount} elementos</p>
-            </div>
-          </div>
-          {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-        </button>
-        
-        {isExpanded && itemCount > 0 && (
-          <div className="border-t border-gray-200 p-6">
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {normalizedItems.map((item, index) => {
-                const parsedItem = parseContent(item);
-                
-                return (
-                  <div key={index} className={`rounded-lg p-4 border ${
-                    type === 'exfiltrated' ? 'bg-red-50 border-red-200' :
-                    type === 'commands' ? 'bg-orange-50 border-orange-200' :
-                    type === 'persistence' ? 'bg-orange-50 border-orange-200' :
-                    type === 'processes' ? 'bg-blue-50 border-blue-200' :
-                    type === 'connections' ? 'bg-green-50 border-green-200' :
-                    'bg-gray-50 border-gray-200'
-                  }`}>
-                    {type === 'exfiltrated' && typeof parsedItem === 'object' ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 mb-2">
-                          <HardDrive className="w-4 h-4 text-red-600" />
-                          <span className="font-semibold text-red-800">Archivo Exfiltrado</span>
-                        </div>
-                        <div className="text-sm">
-                          <p><span className="font-medium">Ruta:</span> {parsedItem.path}</p>
-                          <p><span className="font-medium">SHA256:</span> <span className="font-mono text-xs break-all">{parsedItem.sha256}</span></p>
-                        </div>
-                      </div>
-                    ) : (
-                      <StructuredView data={parsedItem} itemType={type} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        
-        {isExpanded && itemCount === 0 && (
-          <div className="border-t border-gray-200 p-6 text-center">
-            <p className="text-gray-500">No hay elementos para mostrar</p>
-          </div>
-        )}
-      </div>
-    );
+  const downloadJson = () => {
+    const a = document.createElement("a");
+    a.href = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(r, null, 2));
+    a.download = `report_${r.hostname}_${id}.json`;
+    a.click();
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-center min-h-96">
-            <div className="flex items-center gap-3 text-gray-600">
-              <Database className="w-6 h-6 animate-pulse" />
-              <span className="text-lg">Cargando reporte...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
-            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-red-800 mb-2">Error al cargar el reporte</h2>
-            <p className="text-red-700 mb-4">{error}</p>
-            <button
-              onClick={() => navigate(-1)}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Volver
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!report) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center py-12">
-            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-800">Reporte no encontrado</h2>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <div className="flex items-center gap-4 mb-4">
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
+    <div className="min-h-full" style={{ background: BG }}>
+
+      {/* ── Header sticky ── */}
+      <div className="sticky top-0 z-10 px-6 py-3 border-b"
+        style={{ background: `${BG}f0`, borderColor: BORDER, backdropFilter: "blur(8px)" }}>
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate(-1)}
+              className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+              style={{ color: "#6e7681" }}>
+              <ArrowLeft size={16} />
             </button>
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <FileText className="w-6 h-6 text-blue-600" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold" style={{ color: "#e6edf3" }}>{r.hostname}</h1>
+                {r.elevated && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(210,153,34,0.15)", color: "#d29922", border: "1px solid rgba(210,153,34,0.3)" }}>
+                    ADMIN
+                  </span>
+                )}
+                {r.anti_debug && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(248,81,73,0.12)", color: "#ffa198", border: "1px solid rgba(248,81,73,0.3)" }}>
+                    ANTI-DEBUG
+                  </span>
+                )}
               </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Detalle del Reporte</h1>
-                <p className="text-gray-600">{report.hostname} - {formatDate(report.last_seen)}</p>
-              </div>
+              <p className="text-xs font-mono" style={{ color: "#6e7681" }}>
+                {r.os} {r.arch} · {r.user} · {formatDate(r.last_seen || r.lastseen)}
+              </p>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <button
-              onClick={downloadJson}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Download className="w-4 h-4" />
-              Descargar JSON
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowJson(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: "#21262d", color: "#8b949e", border: `1px solid ${BORDER}` }}>
+              {showJson ? <EyeOff size={11} /> : <Eye size={11} />} Raw JSON
             </button>
-            <button
-              onClick={() => setShowRawJson(!showRawJson)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              {showRawJson ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              {showRawJson ? 'Ocultar JSON' : 'Ver JSON'}
+            <button onClick={() => navigator.clipboard.writeText(JSON.stringify(r, null, 2))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: "#21262d", color: "#8b949e", border: `1px solid ${BORDER}` }}>
+              <Copy size={11} /> Copiar
             </button>
-            <button
-              onClick={() => copyToClipboard(JSON.stringify(report, null, 2))}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-            >
-              <Copy className="w-4 h-4" />
-              Copiar
-            </button>
-            <button
-              onClick={() => setShowPDFGenerator(!showPDFGenerator)}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              {showPDFGenerator ? 'Ocultar PDF' : 'Generar PDF'}
+            <button onClick={downloadJson}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: "#238636", color: "#ffffff" }}>
+              <Download size={11} /> JSON
             </button>
           </div>
         </div>
+      </div>
 
-        {showRawJson && (
-          <div className="mb-8 bg-gray-900 rounded-xl p-6 overflow-auto">
-            <pre className="text-green-400 text-sm">
-              {JSON.stringify(report, null, 2)}
+      <div className="max-w-6xl mx-auto px-6 py-6 space-y-5">
+
+        {/* ── Alertas críticas ── */}
+        {(r.anti_debug || r.elevated) && (
+          <div className="flex flex-wrap gap-3">
+            {r.anti_debug && (
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium"
+                style={{ background: "rgba(248,81,73,0.08)", borderColor: "#f851494d", color: "#ffa198" }}>
+                <AlertTriangle size={14} /> Anti-debug detectado en este sistema
+              </div>
+            )}
+            {r.elevated && (
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium"
+                style={{ background: "rgba(210,153,34,0.1)", borderColor: "rgba(210,153,34,0.3)", color: "#d29922" }}>
+                <Shield size={14} /> Proceso con privilegios elevados (ADMIN / root)
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── JSON raw ── */}
+        {showJson && (
+          <div className="rounded-xl border overflow-hidden" style={{ borderColor: BORDER }}>
+            <div className="flex items-center justify-between px-4 py-2"
+              style={{ background: CARD2, borderBottom: `1px solid ${BORDER}` }}>
+              <div className="flex gap-1.5">
+                {["#ef4444","#eab308","#22c55e"].map(c => (
+                  <div key={c} className="w-2.5 h-2.5 rounded-full" style={{ background: c, opacity: 0.6 }} />
+                ))}
+              </div>
+              <span className="text-xs font-mono" style={{ color: "#6e7681" }}>report.json</span>
+              <div />
+            </div>
+            <pre className="p-4 overflow-auto max-h-80 text-xs font-mono"
+              style={{ background: "#0d1117", color: "#3fb950" }}>
+              {JSON.stringify(r, null, 2)}
             </pre>
           </div>
         )}
 
-        {showPDFGenerator && (
-          <div className="mb-8">
-            <PDFGenerator 
-              report={report} 
-              onGeneratePDF={handlePDFGenerated}
-            />
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <InfoCard 
-            title="Hostname" 
-            value={report.hostname} 
-            icon={Monitor} 
-          />
-          <InfoCard 
-            title="Sistema Operativo" 
-            value={`${report.os} ${report.arch}`} 
-            icon={Cpu} 
-          />
-          <InfoCard 
-            title="Usuario" 
-            value={report.user || 'N/A'} 
-            icon={User} 
-          />
-          <InfoCard 
-            title="Privilegios" 
-            value={report.elevated ? 'Elevado' : 'Estándar'} 
-            icon={report.elevated ? Shield : ShieldCheck}
-            type={report.elevated ? 'warning' : 'success'}
-          />
+        {/* ── Stats overview ── */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          <StatBadge label="Usuario"    value={r.user || "N/A"} />
+          <StatBadge label="Arq."       value={r.arch || "—"} />
+          <StatBadge label="Procesos"   value={r.processes?.length ?? 0} />
+          <StatBadge label="Conexiones" value={r.connections?.length ?? 0} />
+          <StatBadge label="Comandos"   value={cmds.length} />
+          <StatBadge label="Archivos"   value={files.length} />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <InfoCard 
-            title="Gateway" 
-            value={report.gateway || 'N/A'} 
-            icon={Network} 
-          />
-          <InfoCard 
-            title="IPs Detectadas" 
-            value={report.ips?.length || 0} 
-            icon={Wifi} 
-          />
-          <InfoCard 
-            title="Servidores DNS" 
-            value={report.dns?.length || 0} 
-            icon={Server} 
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <InfoCard 
-            title="Primera Conexión" 
-            value={formatDate(report.firstseen)} 
-            icon={Clock} 
-          />
-          <InfoCard 
-            title="Última Actividad" 
-            value={formatDate(report.last_seen)} 
-            icon={Activity} 
-          />
-        </div>
-
-        {report.antidebug && (
-          <div className="mb-8">
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-6">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-6 h-6 text-orange-600" />
-                <div>
-                  <h3 className="font-semibold text-orange-800">Alerta de Seguridad</h3>
-                  <p className="text-orange-700">Se detectó actividad anti-debug en este sistema</p>
-                </div>
-              </div>
+        {/* ── Red: IPs, DNS, Gateway ── */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-xl border overflow-hidden" style={{ background: CARD, borderColor: BORDER }}>
+            <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <Globe size={13} style={{ color: "#58a6ff" }} />
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#58a6ff" }}>
+                IPs ({r.ips?.length ?? 0})
+              </span>
             </div>
+            <ChipList items={r.ips} color="#58a6ff" />
           </div>
-        )}
 
-        <div className="space-y-6">
-          <ScreenshotSection />
+          <div className="rounded-xl border overflow-hidden" style={{ background: CARD, borderColor: BORDER }}>
+            <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <Server size={13} style={{ color: "#3fb950" }} />
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#3fb950" }}>
+                DNS ({r.dns?.length ?? 0})
+              </span>
+            </div>
+            <ChipList items={r.dns} color="#3fb950" />
+          </div>
 
-          <CollapsibleSection
-            title="Procesos Activos"
-            items={report.processes}
-            type="processes"
-            isExpanded={expandedSections.processes}
-            onToggle={() => toggleSection('processes')}
-          />
-
-          <CollapsibleSection
-            title="Conexiones de Red"
-            items={report.connections}
-            type="connections"
-            isExpanded={expandedSections.connections}
-            onToggle={() => toggleSection('connections')}
-          />
-
-          <CollapsibleSection
-            title="Mecanismos de Persistencia"
-            items={report.persistence}
-            type="persistence"
-            isExpanded={expandedSections.persistence}
-            onToggle={() => toggleSection('persistence')}
-          />
-
-          <CollapsibleSection
-            title="Archivos Accedidos"
-            items={report.filesaccessed}
-            type="files"
-            isExpanded={expandedSections.files}
-            onToggle={() => toggleSection('files')}
-          />
-
-          <CollapsibleSection
-            title="Archivos Exfiltrados"
-            items={report.files_exfiltrated}
-            type="exfiltrated"
-            isExpanded={expandedSections.exfiltrated}
-            onToggle={() => toggleSection('exfiltrated')}
-          />
-
-          <CollapsibleSection
-            title="Comandos Ejecutados"
-            items={report.commands_executed || report.commandsrun}
-            type="commands"
-            isExpanded={expandedSections.commands}
-            onToggle={() => toggleSection('commands')}
-          />
+          <div className="rounded-xl border p-4 space-y-3" style={{ background: CARD, borderColor: BORDER }}>
+            {[
+              { icon: Network,  label: "Gateway",    value: r.gateway || "—",                             color: "#d29922" },
+              { icon: Clock,    label: "First seen",  value: formatDate(r.firstseen || r.first_seen),    color: "#6e7681" },
+              { icon: Activity, label: "Last seen",   value: formatDate(r.last_seen  || r.lastseen),      color: "#6e7681" },
+            ].map(({ icon: Icon, label, value, color }) => (
+              <div key={label} className="flex items-start gap-2 text-xs">
+                <Icon size={12} className="mt-0.5 shrink-0" style={{ color }} />
+                <div>
+                  <p style={{ color: "#484f58" }}>{label}</p>
+                  <p className="font-mono" style={{ color: "#e6edf3" }}>{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {(report.ips?.length > 0 || report.dns?.length > 0) && (
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            {report.ips?.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Network className="w-4 h-4" />
-                  Direcciones IP
-                </h3>
-                <div className="space-y-2">
-                  {report.ips.map((ip, index) => (
-                    <div key={index} className="px-3 py-2 bg-gray-50 rounded font-mono text-sm">
-                      {ip}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        {/* ── Secciones expandibles ── */}
+        <Section icon={Camera}    label="Captura de Pantalla"       color="#bc8cff">
+          <ScreenshotSection agentId={r.agent_id} hostname={r.hostname} lastSeen={r.last_seen} />
+        </Section>
 
-            {report.dns?.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Server className="w-4 h-4" />
-                  Servidores DNS
-                </h3>
-                <div className="space-y-2">
-                  {report.dns.map((dns, index) => (
-                    <div key={index} className="px-3 py-2 bg-gray-50 rounded font-mono text-sm">
-                      {dns}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        <Section icon={Cpu}       label="Procesos Activos"          color="#58a6ff" count={r.processes?.length}>
+          <ProcessTable processes={r.processes} />
+        </Section>
+
+        <Section icon={Network}   label="Conexiones de Red"         color="#3fb950" count={r.connections?.length}>
+          <ConnectionTable connections={r.connections} />
+        </Section>
+
+        <Section icon={Shield}    label="Mecanismos de Persistencia" color="#d29922" count={r.persistence?.length}>
+          <PersistenceList items={r.persistence} />
+        </Section>
+
+        <Section icon={Terminal}  label="Historial de Comandos"     color="#bc8cff" count={cmds.length}>
+          <CommandHistory commands={cmds} />
+        </Section>
+
+        <Section icon={HardDrive} label="Archivos Exfiltrados"      color="#f85149" count={files.length}>
+          <FileList files={files} />
+        </Section>
+
+        {r.hash && (
+          <Section icon={Hash} label="Integridad del Registro" color="#3fb950">
+            <BlockchainInfo report={r} />
+          </Section>
         )}
-
-        <ScreenshotModal />
       </div>
     </div>
   );
-};
-
-export default ReportDetail;
+}
