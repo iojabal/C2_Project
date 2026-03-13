@@ -523,9 +523,9 @@ export default function ReportDetails() {
   const [rawOpen, setRawOpen] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/audit/${id}`)
+    fetch(`/api/v1/reports/${id}`)
       .then(r => r.json())
-      .then(d => { setReport(d); setLoading(false); })
+      .then(d => { setReport(d.data ?? d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [id]);
 
