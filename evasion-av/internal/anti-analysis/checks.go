@@ -61,46 +61,99 @@ func checkProcessDebugFlags() bool {
 }
 
 func checkDebuggerViaException() bool {
-	defer func() {
-		recover()
-	}()
-	_, _, _ = syscall.Syscall(0, 0, 0, 0, 0)
-	return false
+	var isRemoteDebugger bool
+	kernel32 := windows.NewLazyDLL("kernel32.dll")
+	proc := kernel32.NewProc("CheckRemoteDebuggerPresent")
+	proc.Call(
+		uintptr(windows.CurrentProcess()),
+		uintptr(unsafe.Pointer(&isRemoteDebugger)),
+	)
+	return isRemoteDebugger
 }
 
-type CONTEXT struct {
-	ContextFlags uint32
-	Dr0          uint32
-	Dr1          uint32
-	Dr2          uint32
-	Dr3          uint32
-	Dr6          uint32
-	Dr7          uint32
-	// ... (otros campos omitidos para brevedad)
+// CONTEXT_AMD64 es el struct completo para x64 (1232 bytes).
+// ContextFlags está en offset 0x30, Dr0-Dr7 en offset 0x318.
+type CONTEXT_AMD64 struct {
+	P1Home               uint64
+	P2Home               uint64
+	P3Home               uint64
+	P4Home               uint64
+	P5Home               uint64
+	P6Home               uint64
+	ContextFlags         uint32
+	MxCsr                uint32
+	SegCs                uint16
+	SegDs                uint16
+	SegEs                uint16
+	SegFs                uint16
+	SegGs                uint16
+	SegSs                uint16
+	EFlags               uint32
+	_                    uint32 // padding
+	Dr0                  uint64
+	Dr1                  uint64
+	Dr2                  uint64
+	Dr3                  uint64
+	Dr6                  uint64
+	Dr7                  uint64
+	Rax                  uint64
+	Rcx                  uint64
+	Rdx                  uint64
+	Rbx                  uint64
+	Rsp                  uint64
+	Rbp                  uint64
+	Rsi                  uint64
+	Rdi                  uint64
+	R8                   uint64
+	R9                   uint64
+	R10                  uint64
+	R11                  uint64
+	R12                  uint64
+	R13                  uint64
+	R14                  uint64
+	R15                  uint64
+	Rip                  uint64
+	_                    [512]byte // FltSave / XMM registers
+	VectorRegister       [26][16]byte
+	VectorControl        uint64
+	DebugControl         uint64
+	LastBranchToRip      uint64
+	LastBranchFromRip    uint64
+	LastExceptionToRip   uint64
+	LastExceptionFromRip uint64
 }
 
 const CONTEXT_DEBUG_REGISTERS = 0x00010010
 
 func checkHardwareBreakpoints() bool {
-	thread := windows.CurrentThread()
-	defer windows.CloseHandle(thread)
+	// Obtener un handle real al hilo actual (pseudo-handle no funciona con GetThreadContext)
+	kernel32 := windows.NewLazyDLL("kernel32.dll")
+	openThread := kernel32.NewProc("OpenThread")
+	tid := windows.GetCurrentThreadId()
+	hThread, _, _ := openThread.Call(
+		uintptr(windows.THREAD_GET_CONTEXT),
+		0,
+		uintptr(tid),
+	)
+	if hThread == 0 {
+		return false
+	}
+	defer windows.CloseHandle(windows.Handle(hThread))
 
-	var context CONTEXT
-	context.ContextFlags = CONTEXT_DEBUG_REGISTERS
+	var ctx CONTEXT_AMD64
+	ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS
 
-	// Usamos syscall en lugar de windows.GetThreadContext
 	modntdll := syscall.NewLazyDLL("ntdll.dll")
 	procGetThreadContext := modntdll.NewProc("GetThreadContext")
 	ret, _, _ := procGetThreadContext.Call(
-		uintptr(thread),
-		uintptr(unsafe.Pointer(&context)),
+		hThread,
+		uintptr(unsafe.Pointer(&ctx)),
 	)
-
 	if ret == 0 {
 		return false
 	}
 
-	return context.Dr0 != 0 || context.Dr1 != 0 || context.Dr2 != 0 || context.Dr3 != 0
+	return ctx.Dr0 != 0 || ctx.Dr1 != 0 || ctx.Dr2 != 0 || ctx.Dr3 != 0
 }
 
 type PEB struct {
@@ -172,7 +225,10 @@ func checkTimeChecks() bool {
 }
 
 func isCommonParent(name string) bool {
-	common := []string{"explorer.exe", "cmd.exe", "svchost.exe", "services.exe", "wininit.exe"}
+	common := []string{
+		"explorer.exe", "cmd.exe", "svchost.exe", "services.exe", "wininit.exe",
+		"powershell.exe", "pwsh.exe", "wsmprovhost.exe", "wscript.exe", "mshta.exe",
+	}
 	for _, p := range common {
 		if strings.EqualFold(name, p) {
 			return true

